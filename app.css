@@ -1,0 +1,97 @@
+@import './css/vendors/open-props@1.4.16/open-props.min.css';
+@import './css/vendors/open-props@1.4.16/normalize.min.css';
+@import './css/vendors/open-props@1.4.16/normalize.min.css';
+
+html {
+  accent-color: var(--teal-6);
+}
+
+body {
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+}
+
+ul[role=list] > li + li {
+  margin-top: var(--size-3);
+}
+
+ul + ul {
+  margin-top: var(--size-8);
+}
+
+form input,
+form label {
+  display: block
+}
+
+button {
+  padding: var(--size-2) var(--size-4);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-1);
+}
+
+input:not([type=checkbox]) {
+  box-shadow: var(--inner-shadow-1);
+}
+
+form > * + * {
+  margin-top: var(--size-4);
+}
+
+
+label + input:not([type=checkbox]) {
+  margin-top: var(--size-1);
+}
+
+.todo {
+  display: flex;
+  gap: var(--size-1) var(--size-3);
+  align-items: baseline;
+}
+
+.todo > :nth-child(2) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-2) var(--size-3);
+  align-items: center;
+}
+
+.tag {
+  font-size: var(--font-size-0);
+  background: var(--pink-1);
+  padding: 0 var(--size-2);
+  border-radius: var(--radius-4);
+  box-shadow: var(--shadow-1);
+}
+
+.tag.user {
+  background: var(--violet-1);
+  color: var(--violet-9);
+}
+.tag.time-ago {
+  background: var(--grape-1);
+  color: var(--grape-9);
+}
+.tag.twice-a-week {
+  background: var(--teal-1);
+  color: var(--teal-9);
+}
+.tag.every-week {
+  background: var(--green-1);
+  color: var(--green-9);
+}
+.tag.every-other-week {
+  background: var(--lime-1);
+  color: var(--lime-9);
+}
+.tag.every-month {
+  background: var(--yellow-1);
+  color: var(--yellow-9);
+}
+
+.completion-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-2);
+}
