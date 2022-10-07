@@ -10,7 +10,7 @@ import Json.Decode exposing (Decoder, andThen, at, fail, field, list, map3, stri
 import Json.Encode as Encode
 import Platform exposing (Task)
 import Task
-import Time exposing (Posix, Weekday(..), Zone, millisToPosix, posixToMillis, toDay, toHour, toMinute, toMonth, toSecond, toYear)
+import Time exposing (Posix, Weekday(..), Zone, millisToPosix, posixToMillis, toDay, toHour, toMillis, toMinute, toMonth, toSecond, toYear)
 
 
 
@@ -72,8 +72,7 @@ type TodoStatus
 
 
 type TimeAgo
-    = Today
-    | DaysAgo Int
+    = DaysAgo Int
     | WeeksAgo Int
     | LongAgo
 
@@ -164,26 +163,29 @@ previousDay time =
         (posixToMillis time - 1000 * 60 * 60 * 24)
 
 
-atMidnight : ( Posix, Zone ) -> Posix
-atMidnight ( time, zone ) =
+atMidnight : Posix -> Zone -> Posix
+atMidnight time zone =
     let
         hours =
-            toHour zone time
+            toHour zone time * 60 * 60 * 1000
 
         minutes =
-            toMinute zone time
+            toMinute zone time * 60 * 1000
 
         seconds =
-            toSecond zone time
+            toSecond zone time * 1000
+
+        millis =
+            toMillis zone time
     in
     millisToPosix
-        (posixToMillis time - hours * 60 * 60 * 1000 - minutes * 60 * 1000 - seconds * 1000)
+        (posixToMillis time - hours - minutes - seconds - millis)
 
 
 lastMonday : ( Posix, Zone ) -> Posix
 lastMonday ( now, zone ) =
     if Time.toWeekday zone now == Mon then
-        atMidnight ( now, zone )
+        atMidnight now zone
 
     else
         lastMonday ( previousDay now, zone )
@@ -192,7 +194,7 @@ lastMonday ( now, zone ) =
 firstDayOfMonth : ( Posix, Zone ) -> Posix
 firstDayOfMonth ( now, zone ) =
     if Time.toDay zone now == 1 then
-        atMidnight ( now, zone )
+        atMidnight now zone
 
     else
         firstDayOfMonth ( previousDay now, zone )
@@ -201,7 +203,7 @@ firstDayOfMonth ( now, zone ) =
 lastHalfDayOfMonth : ( Posix, Zone ) -> Posix
 lastHalfDayOfMonth ( now, zone ) =
     if Time.toDay zone now == 1 || Time.toDay zone now == 15 then
-        atMidnight ( now, zone )
+        atMidnight now zone
 
     else
         lastHalfDayOfMonth ( previousDay now, zone )
@@ -227,13 +229,13 @@ completionMatchesTodo todo completion =
 timeAgo : Posix -> ( Time.Posix, Zone ) -> TimeAgo
 timeAgo time ( now, zone ) =
     let
-        deltaInDays =
-            floor (toFloat (posixToMillis now - posixToMillis time) / 1000 / 60 / 60 / 24)
-    in
-    if toYear zone time == toYear zone now && toMonth zone time == toMonth zone now && toDay zone time == toDay zone now then
-        Today
+        deltaInMillis =
+            posixToMillis (atMidnight now zone) - posixToMillis (atMidnight time zone)
 
-    else if deltaInDays < 7 then
+        deltaInDays =
+            floor (toFloat deltaInMillis / 1000 / 60 / 60 / 24)
+    in
+    if deltaInDays < 7 then
         DaysAgo deltaInDays
 
     else if deltaInDays < 30 then
@@ -425,20 +427,20 @@ viewTodo index ( todo, status ) =
 viewTimeAgo : TimeAgo -> String
 viewTimeAgo timeAgo_ =
     case timeAgo_ of
-        Today ->
+        DaysAgo 0 ->
             "aujourd'hui"
 
         DaysAgo 1 ->
             "hier"
 
         DaysAgo days ->
-            "il y a " ++ String.fromInt days ++ "jours"
+            "il y a " ++ String.fromInt days ++ " jours"
 
         WeeksAgo 1 ->
             "la semaine dernière"
 
         WeeksAgo weeks ->
-            "il y a " ++ String.fromInt weeks ++ "semaines"
+            "il y a " ++ String.fromInt weeks ++ " semaines"
 
         LongAgo ->
             "il y a plus d'un mois"
@@ -459,6 +461,7 @@ frequencyToString frequency =
         EveryMonth ->
             "1x/mois"
 
+
 frequencyToClass : Frequency -> String
 frequencyToClass frequency =
     case frequency of
@@ -473,6 +476,7 @@ frequencyToClass frequency =
 
         EveryMonth ->
             "every-month"
+
 
 
 -- Http
