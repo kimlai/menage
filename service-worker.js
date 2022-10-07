@@ -2,6 +2,9 @@
 self.addEventListener('push', function(event) {
   console.log(event);
   event.waitUntil(
-    self.registration.showNotification('Ménage', { body: event.data.text() })
+    self.registration.showNotification('Ménage', {
+      body: event.data.text(),
+      icon: '/brain.png'
+    })
   );
 });
