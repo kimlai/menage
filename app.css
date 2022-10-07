@@ -103,3 +103,35 @@ label + input:not([type=checkbox]) {
   flex-wrap: wrap;
   gap: var(--size-2);
 }
+
+.notification-button {
+  padding: 0;
+  background: none;
+  position: absolute;
+  top: var(--size-5);
+  right: var(--size-5);
+}
+
+.notification-button img {
+  width: var(--size-4);
+  height: var(--size-4);
+}
+
+.notification-button[data-active=false] :first-child {
+  display: block;
+}
+.notification-button[data-active=false] :last-child {
+  display: none;
+}
+
+.notification-button[data-active=true] :first-child {
+  display: none;
+}
+.notification-button[data-active=true] :last-child {
+  display: block;
+}
+.notification-button[data-activating=true] img {
+  animation: var(--animation-spin);
+  animation-timing-function: var(--ease-squish-5);
+  animation-duration: 1s;
+}
