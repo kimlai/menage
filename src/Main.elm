@@ -205,9 +205,11 @@ atMidnight time zone =
     millisToPosix
         (posixToMillis time - hours - minutes - seconds - millis)
 
+
 today : ( Posix, Zone ) -> Posix
 today ( now, zone ) =
     atMidnight now zone
+
 
 lastMonday : ( Posix, Zone ) -> Posix
 lastMonday ( now, zone ) =
@@ -423,11 +425,30 @@ viewLoggedIn model =
                         |> RemoteData.withDefault []
                         |> todoList model.now tasks
                         |> List.partition (\( _, status ) -> status /= NotDone)
+
+                sortByCompletedAtDesc =
+                    List.sortWith
+                        (\( _, a ) ( _, b ) ->
+                            case ( a, b ) of
+                                ( Done _ _ compA, Done _ _ compB ) ->
+                                    compare (posixToMillis compB.completedAt) (posixToMillis compA.completedAt)
+
+                                -- all those other branches cannot happen for a list of "done" todos
+                                -- might be worth it to refactor away
+                                ( NotDone, NotDone ) ->
+                                    GT
+
+                                ( NotDone, Done _ _ _ ) ->
+                                    LT
+
+                                ( Done _ _ _, NotDone ) ->
+                                    GT
+                        )
             in
             div
                 []
                 [ viewTodoList 0 (ListExtra.unique notDone)
-                , viewTodoList 1 done
+                , viewTodoList 1 (sortByCompletedAtDesc done)
                 ]
 
         Loading ->
