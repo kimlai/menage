@@ -77,7 +77,7 @@ type alias Todo =
 
 
 type TodoStatus
-    = Done String TimeAgo
+    = Done String TimeAgo Completion
     | NotDone
 
 
@@ -125,15 +125,15 @@ computeStatus now completions todos =
 
         todo :: rest ->
             let
-                ( status, maybeCompletion ) =
+                status =
                     todoStatus now completions todo
 
                 completionsLeft =
-                    case maybeCompletion of
-                        Just completion ->
+                    case status of
+                        Done _ _ completion ->
                             List.filter (\c -> c /= completion) completions
 
-                        Nothing ->
+                        NotDone ->
                             completions
             in
             ( todo, status ) :: computeStatus now completionsLeft rest
@@ -219,16 +219,16 @@ lastHalfDayOfMonth ( now, zone ) =
         lastHalfDayOfMonth ( previousDay now, zone )
 
 
-todoStatus : ( Posix, Zone ) -> List Completion -> Todo -> ( TodoStatus, Maybe Completion )
+todoStatus : ( Posix, Zone ) -> List Completion -> Todo -> TodoStatus
 todoStatus now completions todo =
     completions
         |> List.filter (completionMatchesTodo todo)
         |> List.head
         |> Maybe.map
             (\completion ->
-                ( Done completion.user (timeAgo completion.completedAt now), Just completion )
+                Done completion.user (timeAgo completion.completedAt now) completion
             )
-        |> Maybe.withDefault ( NotDone, Nothing )
+        |> Maybe.withDefault NotDone
 
 
 completionMatchesTodo : Todo -> Completion -> Bool
@@ -263,9 +263,10 @@ type Msg
     = GotTasks (RemoteData (List Task))
     | GotCompletions (RemoteData (List Completion))
     | GotCurrentTime ( Posix, Zone )
-    | TodoChecked Todo Bool
-    | TodoCheckedWithTime Todo Posix
+    | TodoChecked Todo TodoStatus Bool
+    | MarkTotoAsDone Todo Posix
     | CompletionSaved Completion (RemoteData Completion)
+    | CompletionDeleted (RemoteData String)
     | UsernameInput String
     | SaveUsername
 
@@ -331,16 +332,27 @@ update msg model =
             , Cmd.none
             )
 
-        TodoChecked todo checked ->
-            if checked then
-                ( model
-                , Task.perform (TodoCheckedWithTime todo) Time.now
-                )
+        CompletionDeleted _ ->
+          ( model
+          , Cmd.none
+          )
 
-            else
-                ( model, Cmd.none )
+        TodoChecked todo NotDone _ ->
+            ( model
+            , Task.perform (MarkTotoAsDone todo) Time.now
+            )
 
-        TodoCheckedWithTime todo now ->
+        TodoChecked _ (Done _ _ completion) _ ->
+            ( { model
+                | completions =
+                    RemoteData.map
+                        (List.filter (\c -> c /= completion))
+                        model.completions
+              }
+              , deleteCompletion completion
+            )
+
+        MarkTotoAsDone todo now ->
             case model.user of
                 Just user ->
                     let
@@ -430,7 +442,7 @@ viewTodo index ( todo, status ) =
     let
         isDone =
             case status of
-                Done _ _ ->
+                Done _ _ _ ->
                     True
 
                 NotDone ->
@@ -441,13 +453,13 @@ viewTodo index ( todo, status ) =
     in
     li
         [ class "todo" ]
-        [ div [] [ input [ type_ "checkbox", checked isDone, id id_, onCheck (TodoChecked todo) ] [] ]
+        [ div [] [ input [ type_ "checkbox", checked isDone, id id_, onCheck (TodoChecked todo status) ] [] ]
         , div
             []
             [ label [ for id_ ] [ text todo.task.name ]
             , div [ class ("tag " ++ frequencyToClass todo.task.frequency) ] [ text (frequencyToString todo.task.frequency) ]
             , case status of
-                Done user timeAgo_ ->
+                Done user timeAgo_ _ ->
                     div
                         [ class "completion-tags" ]
                         [ div [ class "tag user" ] [ text user ]
@@ -527,6 +539,10 @@ airtablePost : String -> Http.Body -> (RemoteData a -> msg) -> Decoder a -> Cmd 
 airtablePost path body msg decoder =
     airtableRequest "POST" path body msg decoder
 
+airtableDelete : String -> (RemoteData a -> msg) -> Decoder a -> Cmd msg
+airtableDelete path msg decoder =
+    airtableRequest "DELETE" path Http.emptyBody msg decoder
+
 
 airtableRequest : String -> String -> Http.Body -> (RemoteData a -> msg) -> Decoder a -> Cmd msg
 airtableRequest method path body msg decoder =
@@ -557,6 +573,10 @@ airTableGetCompletions =
 postCompletion : Completion -> Cmd Msg
 postCompletion completion =
     airtablePost "/completions" (Http.jsonBody (completionEncoder completion)) (CompletionSaved completion) completionDecoder
+
+deleteCompletion : Completion -> Cmd Msg
+deleteCompletion { id }   =
+    airtableDelete ("/completions/" ++ id) CompletionDeleted (Json.Decode.succeed "Ok")
 
 
 completionEncoder : Completion -> Encode.Value
