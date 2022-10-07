@@ -24,6 +24,7 @@ exports.handler = async (event) => {
       try {
         const subscription = JSON.parse(record.get('subscription'));
         await webpush.sendNotification(subscription, `${completionData.user} a complété la tâche "${task.get('name')}"`);
+        console.log("Notification successfully sent")
       } catch (error) {
         console.error("should probably delete this subscription", error);
       }
