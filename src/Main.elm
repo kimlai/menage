@@ -298,17 +298,36 @@ update msg model =
             , Cmd.none
             )
 
-        CompletionSaved _ _ ->
+        CompletionSaved oldCompletion (Failure _) ->
+            ( { model
+                | completions =
+                    RemoteData.map
+                        (List.filter (\completion -> completion == oldCompletion))
+                        model.completions
+              }
+            , Cmd.none
+            )
+
+        CompletionSaved oldCompletion (Success savedCompletion) ->
             ( { model
                 | completions =
                     RemoteData.map
                         (List.map
-                            (\c ->
-                                c
+                            (\completion ->
+                                if completion == oldCompletion then
+                                    savedCompletion
+
+                                else
+                                    completion
                             )
                         )
                         model.completions
               }
+            , Cmd.none
+            )
+
+        CompletionSaved _ _ ->
+            ( model
             , Cmd.none
             )
 
