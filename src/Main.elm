@@ -333,9 +333,9 @@ update msg model =
             )
 
         CompletionDeleted _ ->
-          ( model
-          , Cmd.none
-          )
+            ( model
+            , Cmd.none
+            )
 
         TodoChecked todo NotDone _ ->
             ( model
@@ -349,7 +349,7 @@ update msg model =
                         (List.filter (\c -> c /= completion))
                         model.completions
               }
-              , deleteCompletion completion
+            , deleteCompletion completion
             )
 
         MarkTotoAsDone todo now ->
@@ -406,7 +406,7 @@ viewLoggedIn model =
                 |> List.partition (\( _, status ) -> status /= NotDone)
                 |> (\( done, notDone ) ->
                         [ notDone, done ]
-                            |> List.map viewTodoList
+                            |> List.indexedMap viewTodoList
                             |> div []
                    )
 
@@ -432,12 +432,14 @@ viewLogin =
         ]
 
 
-viewTodoList : List ( Todo, TodoStatus ) -> Html Msg
-viewTodoList todoList_ =
-    ul [ attribute "role" "list" ] (List.indexedMap viewTodo todoList_)
+viewTodoList : Int -> List ( Todo, TodoStatus ) -> Html Msg
+viewTodoList i todoList_ =
+    todoList_
+        |> List.indexedMap (\j todos -> viewTodo (String.fromInt i ++ String.fromInt j) todos)
+        |> ul [ attribute "role" "list" ]
 
 
-viewTodo : Int -> ( Todo, TodoStatus ) -> Html Msg
+viewTodo : String -> ( Todo, TodoStatus ) -> Html Msg
 viewTodo index ( todo, status ) =
     let
         isDone =
@@ -449,7 +451,7 @@ viewTodo index ( todo, status ) =
                     False
 
         id_ =
-            todo.task.name ++ String.fromInt index
+            todo.task.name ++ index
     in
     li
         [ class "todo" ]
@@ -539,6 +541,7 @@ airtablePost : String -> Http.Body -> (RemoteData a -> msg) -> Decoder a -> Cmd 
 airtablePost path body msg decoder =
     airtableRequest "POST" path body msg decoder
 
+
 airtableDelete : String -> (RemoteData a -> msg) -> Decoder a -> Cmd msg
 airtableDelete path msg decoder =
     airtableRequest "DELETE" path Http.emptyBody msg decoder
@@ -574,8 +577,9 @@ postCompletion : Completion -> Cmd Msg
 postCompletion completion =
     airtablePost "/completions" (Http.jsonBody (completionEncoder completion)) (CompletionSaved completion) completionDecoder
 
+
 deleteCompletion : Completion -> Cmd Msg
-deleteCompletion { id }   =
+deleteCompletion { id } =
     airtableDelete ("/completions/" ++ id) CompletionDeleted (Json.Decode.succeed "Ok")
 
 
