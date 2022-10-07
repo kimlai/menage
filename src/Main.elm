@@ -467,7 +467,6 @@ viewTodo index ( todo, status ) =
         , div
             []
             [ label [ for id_ ] [ text todo.task.name ]
-            , div [ class ("tag " ++ frequencyToClass todo.task.frequency) ] [ text (frequencyToString todo.task.frequency) ]
             , case status of
                 Done user timeAgo_ _ ->
                     div
@@ -477,7 +476,7 @@ viewTodo index ( todo, status ) =
                         ]
 
                 NotDone ->
-                    text ""
+                    div [ class ("tag " ++ frequencyToClass todo.task.frequency) ] [ text (frequencyToString todo.task.frequency) ]
             ]
         ]
 
