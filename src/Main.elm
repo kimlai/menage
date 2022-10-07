@@ -8,6 +8,7 @@ import Http exposing (Error(..))
 import Iso8601
 import Json.Decode exposing (Decoder, andThen, at, fail, field, list, map3, map4, string, succeed)
 import Json.Encode as Encode
+import ListExtra
 import Platform exposing (Task)
 import RemoteData exposing (RemoteData(..))
 import Task
@@ -48,7 +49,8 @@ type alias Task =
 
 
 type Frequency
-    = TwiceAWeek
+    = FourTimesAWeek
+    | TwiceAWeek
     | EveryWeek
     | EveryOtherWeek
     | EveryMonth
@@ -148,6 +150,9 @@ todosFromTask now task =
             }
     in
     case task.frequency of
+        FourTimesAWeek ->
+            List.repeat 4 thisWeek
+
         TwiceAWeek ->
             List.repeat 2 thisWeek
 
@@ -400,15 +405,18 @@ viewLoggedIn : Model -> Html Msg
 viewLoggedIn model =
     case model.tasks of
         Success tasks ->
-            model.completions
-                |> RemoteData.withDefault []
-                |> todoList model.now tasks
-                |> List.partition (\( _, status ) -> status /= NotDone)
-                |> (\( done, notDone ) ->
-                        [ notDone, done ]
-                            |> List.indexedMap viewTodoList
-                            |> div []
-                   )
+            let
+                ( done, notDone ) =
+                    model.completions
+                        |> RemoteData.withDefault []
+                        |> todoList model.now tasks
+                        |> List.partition (\( _, status ) -> status /= NotDone)
+            in
+            div
+                []
+                [ viewTodoList 0 (ListExtra.unique notDone)
+                , viewTodoList 1 done
+                ]
 
         Loading ->
             text "Chargement des tâches"
@@ -499,6 +507,9 @@ viewTimeAgo timeAgo_ =
 frequencyToString : Frequency -> String
 frequencyToString frequency =
     case frequency of
+        FourTimesAWeek ->
+            "4x/semaine"
+
         TwiceAWeek ->
             "2x/semaine"
 
@@ -515,6 +526,9 @@ frequencyToString frequency =
 frequencyToClass : Frequency -> String
 frequencyToClass frequency =
     case frequency of
+        FourTimesAWeek ->
+            "four-times-a-week"
+
         TwiceAWeek ->
             "twice-a-week"
 
@@ -620,6 +634,9 @@ frequencyDecoder =
 
                     "every week" ->
                         succeed EveryWeek
+
+                    "four times a week" ->
+                        succeed FourTimesAWeek
 
                     "twice a week" ->
                         succeed TwiceAWeek
