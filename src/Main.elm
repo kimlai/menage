@@ -49,7 +49,8 @@ type alias Task =
 
 
 type Frequency
-    = FourTimesAWeek
+    = TwiceADay
+    | FourTimesAWeek
     | TwiceAWeek
     | EveryWeek
     | EveryOtherWeek
@@ -148,8 +149,16 @@ todosFromTask now task =
             { task = task
             , start = lastMonday now
             }
+
+        today_ =
+            { task = task
+            , start = today now
+            }
     in
     case task.frequency of
+        TwiceADay ->
+            List.repeat 2 today_
+
         FourTimesAWeek ->
             List.repeat 4 thisWeek
 
@@ -196,6 +205,9 @@ atMidnight time zone =
     millisToPosix
         (posixToMillis time - hours - minutes - seconds - millis)
 
+today : ( Posix, Zone ) -> Posix
+today ( now, zone ) =
+    atMidnight now zone
 
 lastMonday : ( Posix, Zone ) -> Posix
 lastMonday ( now, zone ) =
@@ -506,6 +518,9 @@ viewTimeAgo timeAgo_ =
 frequencyToString : Frequency -> String
 frequencyToString frequency =
     case frequency of
+        TwiceADay ->
+            "2x/jour"
+
         FourTimesAWeek ->
             "4x/semaine"
 
@@ -525,11 +540,14 @@ frequencyToString frequency =
 frequencyToClass : Frequency -> String
 frequencyToClass frequency =
     case frequency of
-        FourTimesAWeek ->
-            "four-times-a-week"
+        TwiceADay ->
+            "twice-a-day"
 
         TwiceAWeek ->
             "twice-a-week"
+
+        FourTimesAWeek ->
+            "four-times-a-week"
 
         EveryWeek ->
             "every-week"
@@ -628,6 +646,9 @@ frequencyDecoder =
         |> andThen
             (\str ->
                 case str of
+                    "twice a day" ->
+                        succeed TwiceADay
+
                     "every other week" ->
                         succeed EveryOtherWeek
 

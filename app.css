@@ -73,6 +73,10 @@ label + input:not([type=checkbox]) {
   background: var(--grape-1);
   color: var(--grape-9);
 }
+.tag.twice-a-day {
+  background: var(--blue-1);
+  color: var(--blue-9);
+}
 .tag.four-times-a-week {
   background: var(--cyan-1);
   color: var(--cyan-9);
