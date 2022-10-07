@@ -1,5 +1,5 @@
 var Airtable = require('airtable');
-var base = new Airtable({ apiKey: 'keyDcHbvnKUCGYo9l' }).base('appzk3oeSLhSwr9Dd');
+var base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE);
 
 // Docs on event and context https://www.netlify.com/docs/functions/#the-handler-method
 exports.handler = async (event) => {

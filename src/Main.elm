@@ -627,7 +627,7 @@ airTableGetCompletions =
 
 postCompletion : Completion -> Cmd Msg
 postCompletion completion =
-    airtablePost "/completions" (Http.jsonBody (completionEncoder completion)) (CompletionSaved completion) completionDecoder
+    apiPost "/create-completion" (Http.jsonBody (completionEncoder completion)) (CompletionSaved completion) completionDecoder
 
 
 deleteCompletion : Completion -> Cmd Msg
@@ -635,16 +635,40 @@ deleteCompletion { id } =
     airtableDelete ("/completions/" ++ id) CompletionDeleted (Json.Decode.succeed "Ok")
 
 
+apiGet : String -> (RemoteData a -> msg) -> Decoder a -> Cmd msg
+apiGet path msg decoder =
+    apiRequest "GET" path Http.emptyBody msg decoder
+
+
+apiPost : String -> Http.Body -> (RemoteData a -> msg) -> Decoder a -> Cmd msg
+apiPost path body msg decoder =
+    apiRequest "POST" path body msg decoder
+
+
+apiDelete : String -> (RemoteData a -> msg) -> Decoder a -> Cmd msg
+apiDelete path msg decoder =
+    apiRequest "DELETE" path Http.emptyBody msg decoder
+
+
+apiRequest : String -> String -> Http.Body -> (RemoteData a -> msg) -> Decoder a -> Cmd msg
+apiRequest method path body msg decoder =
+    Http.request
+        { method = method
+        , headers = []
+        , url = "/.netlify/functions" ++ path
+        , body = body
+        , expect = Http.expectJson (RemoteData.fromResult >> msg) decoder
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
 completionEncoder : Completion -> Encode.Value
 completionEncoder completion =
     Encode.object
-        [ ( "fields"
-          , Encode.object
-                [ ( "user", Encode.string completion.user )
-                , ( "completed_at", Iso8601.encode completion.completedAt )
-                , ( "task", Encode.list Encode.string [ completion.taskId ] )
-                ]
-          )
+        [ ( "user", Encode.string completion.user )
+        , ( "completed_at", Iso8601.encode completion.completedAt )
+        , ( "task", Encode.list Encode.string [ completion.taskId ] )
         ]
 
 
