@@ -6,11 +6,12 @@ import Html.Attributes exposing (attribute, checked, class, for, id, name, requi
 import Html.Events exposing (onCheck, onInput, onSubmit)
 import Http exposing (Error(..))
 import Iso8601
-import Json.Decode exposing (Decoder, andThen, at, fail, field, list, map3, string, succeed)
+import Json.Decode exposing (Decoder, andThen, at, fail, field, list, map3, map4, string, succeed)
 import Json.Encode as Encode
 import Platform exposing (Task)
+import RemoteData exposing (RemoteData(..))
 import Task
-import Time exposing (Posix, Weekday(..), Zone, millisToPosix, posixToMillis, toDay, toHour, toMillis, toMinute, toMonth, toSecond, toYear)
+import Time exposing (Posix, Weekday(..), Zone, millisToPosix, posixToMillis, toHour, toMillis, toMinute, toSecond)
 
 
 
@@ -27,16 +28,20 @@ main =
 
 
 type alias Model =
-    { tasks : Maybe (Result Http.Error (List Task))
-    , completions : Maybe (Result Http.Error (List Completion))
+    { tasks : RemoteData (List Task)
+    , completions : RemoteData (List Completion)
     , user : Maybe String
     , now : Maybe ( Posix, Zone )
     , usernameInput : String
     }
 
 
+type alias TaskID =
+    String
+
+
 type alias Task =
-    { id : String
+    { id : TaskID
     , name : TaskName
     , frequency : Frequency
     }
@@ -53,8 +58,13 @@ type alias TaskName =
     String
 
 
+type alias CompletionID =
+    String
+
+
 type alias Completion =
-    { user : String
+    { id : CompletionID
+    , user : String
     , taskId : String
     , completedAt : Posix
     }
@@ -79,14 +89,14 @@ type TimeAgo
 
 init : Maybe String -> ( Model, Cmd Msg )
 init user =
-    ( { tasks = Nothing
-      , completions = Nothing
+    ( { tasks = Loading
+      , completions = Loading
       , user = user
       , now = Nothing
       , usernameInput = ""
       }
     , Cmd.batch
-        [ airtableGet "/tasks?sort%5B0%5D%5Bfield%5D=frequency&sort%5B0%5D%5Bdirection%5D=asc" GotTasks tasksDecoder
+        [ airtableGetTasks
         , airtableGet "/completions" GotCompletions completionsDecoder
         , Task.perform GotCurrentTime (Time.now |> Task.andThen (\now -> Task.map (Tuple.pair now) Time.here))
         ]
@@ -250,12 +260,12 @@ timeAgo time ( now, zone ) =
 
 
 type Msg
-    = GotTasks (Result Http.Error (List Task))
-    | GotCompletions (Result Http.Error (List Completion))
+    = GotTasks (RemoteData (List Task))
+    | GotCompletions (RemoteData (List Completion))
     | GotCurrentTime ( Posix, Zone )
     | TodoChecked Todo Bool
     | TodoCheckedWithTime Todo Posix
-    | CompletionSent (Result Http.Error Completion)
+    | CompletionSaved Completion (RemoteData Completion)
     | UsernameInput String
     | SaveUsername
 
@@ -278,18 +288,29 @@ update msg model =
             , setStorage model.usernameInput
             )
 
-        GotTasks result ->
-            ( { model | tasks = Just result }
+        GotTasks tasks ->
+            ( { model | tasks = tasks }
             , Cmd.none
             )
 
         GotCompletions result ->
-            ( { model | completions = Just result }
+            ( { model | completions = result }
             , Cmd.none
             )
 
-        CompletionSent _ ->
-            ( model, Cmd.none )
+        CompletionSaved _ _ ->
+            ( { model
+                | completions =
+                    RemoteData.map
+                        (List.map
+                            (\c ->
+                                c
+                            )
+                        )
+                        model.completions
+              }
+            , Cmd.none
+            )
 
         TodoChecked todo checked ->
             if checked then
@@ -305,12 +326,11 @@ update msg model =
                 Just user ->
                     let
                         completion =
-                            Completion user todo.task.id now
+                            Completion "tmp-id" user todo.task.id now
                     in
                     ( { model
                         | completions =
-                            model.completions
-                                |> Maybe.map (Result.map ((::) completion))
+                            RemoteData.map ((::) completion) model.completions
                       }
                     , postCompletion completion
                     )
@@ -348,30 +368,27 @@ view model =
 viewLoggedIn : Model -> Html Msg
 viewLoggedIn model =
     case model.tasks of
-        Just httpResult ->
-            case httpResult of
-                Ok tasks ->
-                    model.completions
-                        |> Maybe.map (Result.withDefault [])
-                        |> Maybe.withDefault []
-                        |> todoList model.now tasks
-                        |> List.partition (\( _, status ) -> status /= NotDone)
-                        |> (\( done, notDone ) ->
-                                [ notDone, done ]
-                                    |> List.map viewTodoList
-                                    |> div []
-                           )
+        Success tasks ->
+            model.completions
+                |> RemoteData.withDefault []
+                |> todoList model.now tasks
+                |> List.partition (\( _, status ) -> status /= NotDone)
+                |> (\( done, notDone ) ->
+                        [ notDone, done ]
+                            |> List.map viewTodoList
+                            |> div []
+                   )
 
-                Err err ->
-                    case err of
-                        BadBody message ->
-                            text ("Erreur de chargement des tâches: " ++ message)
+        Loading ->
+            text "Chargement des tâches"
 
-                        _ ->
-                            text "Erreur de chargement des tâches"
+        Failure err ->
+            case err of
+                BadBody message ->
+                    text ("Erreur de chargement des tâches: " ++ message)
 
-        Nothing ->
-            text "Chargement des tâches..."
+                _ ->
+                    text "Erreur de chargement des tâches"
 
 
 viewLogin : Html Msg
@@ -482,32 +499,45 @@ frequencyToClass frequency =
 -- Http
 
 
-airtableGet : String -> (Result Http.Error a -> msg) -> Decoder a -> Cmd msg
+airtableGet : String -> (RemoteData a -> msg) -> Decoder a -> Cmd msg
 airtableGet path msg decoder =
     airtableRequest "GET" path Http.emptyBody msg decoder
 
 
-airtablePost : String -> Http.Body -> (Result Http.Error a -> msg) -> Decoder a -> Cmd msg
+airtablePost : String -> Http.Body -> (RemoteData a -> msg) -> Decoder a -> Cmd msg
 airtablePost path body msg decoder =
     airtableRequest "POST" path body msg decoder
 
 
-airtableRequest : String -> String -> Http.Body -> (Result Http.Error a -> msg) -> Decoder a -> Cmd msg
+airtableRequest : String -> String -> Http.Body -> (RemoteData a -> msg) -> Decoder a -> Cmd msg
 airtableRequest method path body msg decoder =
     Http.request
         { method = method
         , headers = [ Http.header "Authorization" "Bearer keyDcHbvnKUCGYo9l" ]
         , url = "https://api.airtable.com/v0/appzk3oeSLhSwr9Dd" ++ path
         , body = body
-        , expect = Http.expectJson msg decoder
+        , expect = Http.expectJson (RemoteData.fromResult >> msg) decoder
         , timeout = Nothing
         , tracker = Nothing
         }
 
 
+airtableGetTasks : Cmd Msg
+airtableGetTasks =
+    airtableGet
+        "/tasks?sort%5B0%5D%5Bfield%5D=frequency&sort%5B0%5D%5Bdirection%5D=asc"
+        GotTasks
+        tasksDecoder
+
+
+airTableGetCompletions : Cmd Msg
+airTableGetCompletions =
+    airtableGet "/completions" GotCompletions completionsDecoder
+
+
 postCompletion : Completion -> Cmd Msg
 postCompletion completion =
-    airtablePost "/completions" (Http.jsonBody (completionEncoder completion)) CompletionSent completionDecoder
+    airtablePost "/completions" (Http.jsonBody (completionEncoder completion)) (CompletionSaved completion) completionDecoder
 
 
 completionEncoder : Completion -> Encode.Value
@@ -566,20 +596,21 @@ completionsDecoder =
 
 completionDecoder : Decoder Completion
 completionDecoder =
-    map3 Completion
+    map4 Completion
+        (field "id" string)
         (at [ "fields", "user" ] string)
         (at [ "fields", "task" ] taskIdDecoder)
         (at [ "fields", "completed_at" ] Iso8601.decoder)
 
 
-taskIdDecoder : Decoder String
+taskIdDecoder : Decoder TaskID
 taskIdDecoder =
     list string
         |> andThen
-            (\names ->
-                case names of
-                    name :: [] ->
-                        succeed name
+            (\ids ->
+                case ids of
+                    id :: [] ->
+                        succeed id
 
                     _ ->
                         fail "Expected exactly one task"
