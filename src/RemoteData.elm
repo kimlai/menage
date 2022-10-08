@@ -1,6 +1,5 @@
 module RemoteData exposing (..)
 
-import Html.Attributes exposing (value)
 import Http
 
 

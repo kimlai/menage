@@ -1,7 +1,7 @@
 port module Main exposing (..)
 
 import Browser
-import Html exposing (Html, button, div, form, input, label, li, main_, output, text, time, ul)
+import Html exposing (Html, button, div, form, input, label, li, main_, output, text, ul)
 import Html.Attributes exposing (attribute, checked, class, for, id, name, required, type_)
 import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
 import Http exposing (Error(..))
