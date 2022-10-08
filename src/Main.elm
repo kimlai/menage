@@ -1,9 +1,9 @@
 port module Main exposing (..)
 
 import Browser
-import Html exposing (Html, button, div, form, input, label, li, main_, text, time, ul)
+import Html exposing (Html, button, div, form, input, label, li, main_, output, text, time, ul)
 import Html.Attributes exposing (attribute, checked, class, for, id, name, required, type_)
-import Html.Events exposing (onCheck, onInput, onSubmit)
+import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
 import Http exposing (Error(..))
 import Iso8601
 import Json.Decode exposing (Decoder, andThen, at, fail, field, list, map3, map4, string, succeed)
@@ -34,6 +34,7 @@ type alias Model =
     , user : Maybe String
     , now : Maybe ( Posix, Zone )
     , usernameInput : String
+    , toasts : List Toast
     }
 
 
@@ -90,6 +91,12 @@ type TimeAgo
     | LongAgo
 
 
+type alias Toast =
+    { title : String
+    , message : String
+    }
+
+
 init : Maybe String -> ( Model, Cmd Msg )
 init user =
     ( { tasks = Loading
@@ -97,6 +104,7 @@ init user =
       , user = user
       , now = Nothing
       , usernameInput = ""
+      , toasts = []
       }
     , Cmd.batch
         [ airtableGetTasks
@@ -274,6 +282,33 @@ timeAgo time ( now, zone ) =
         LongAgo
 
 
+toastFromHttpError : Http.Error -> Toast
+toastFromHttpError error =
+    case error of
+        Timeout ->
+            Toast "Erreur serveur" "Le serveur a mis trop de temps à répondre"
+
+        NetworkError ->
+            Toast "Problème de connexion" "Veuillez vérifier votre connexion internet"
+
+        BadStatus code ->
+            let
+                message =
+                    if code < 500 then
+                        "Veuillez contacter le support"
+
+                    else
+                        "Veuillez réessayer plus tard"
+            in
+            Toast ("Erreur serveur (" ++ String.fromInt code ++ ")") message
+
+        BadBody err ->
+            Toast "Erreur serveur" ("La réponse du serveur est inattendue : " ++ err)
+
+        BadUrl url ->
+            Toast "Erreur serveur" ("Url invalide : " ++ url)
+
+
 
 -- Update
 
@@ -283,11 +318,13 @@ type Msg
     | GotCompletions (RemoteData (List Completion))
     | GotCurrentTime ( Posix, Zone )
     | TodoChecked Todo TodoStatus Bool
-    | MarkTotoAsDone Todo Posix
+    | MarkTodoAsDone Todo Posix
     | CompletionSaved Completion (RemoteData Completion)
-    | CompletionDeleted (RemoteData String)
+    | CompletionDeleted Completion (RemoteData String)
     | UsernameInput String
     | SaveUsername
+    | Refresh Posix
+    | RemoveToast Int
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -308,6 +345,21 @@ update msg model =
             , setStorage model.usernameInput
             )
 
+        Refresh now ->
+            ( { model | now = Maybe.map (\( _, zone ) -> ( now, zone )) model.now }
+            , Cmd.batch
+                [ airtableGetTasks
+                , airtableGet "/completions" GotCompletions completionsDecoder
+                ]
+            )
+
+        RemoveToast index ->
+            ( { model
+                | toasts = ListExtra.dropAtIndex index model.toasts
+              }
+            , Cmd.none
+            )
+
         GotTasks tasks ->
             ( { model | tasks = tasks }
             , Cmd.none
@@ -318,12 +370,14 @@ update msg model =
             , Cmd.none
             )
 
-        CompletionSaved oldCompletion (Failure _) ->
+        CompletionSaved oldCompletion (Failure err) ->
             ( { model
                 | completions =
                     RemoteData.map
-                        (List.filter (\completion -> completion == oldCompletion))
+                        (List.filter (\completion -> completion /= oldCompletion))
                         model.completions
+                , toasts =
+                    model.toasts ++ [ toastFromHttpError err ]
               }
             , Cmd.none
             )
@@ -346,19 +400,27 @@ update msg model =
             , Cmd.none
             )
 
-        CompletionSaved _ _ ->
+        CompletionSaved _ Loading ->
             ( model
             , Cmd.none
             )
 
-        CompletionDeleted _ ->
+        CompletionDeleted completion (Failure err) ->
+            ( { model
+                | completions = RemoteData.map ((::) completion) model.completions
+                , toasts = model.toasts ++ [ toastFromHttpError err ]
+              }
+            , Cmd.none
+            )
+
+        CompletionDeleted _ _ ->
             ( model
             , Cmd.none
             )
 
         TodoChecked todo NotDone _ ->
             ( model
-            , Task.perform (MarkTotoAsDone todo) Time.now
+            , Task.perform (MarkTodoAsDone todo) Time.now
             )
 
         TodoChecked _ (Done _ _ completion) _ ->
@@ -371,7 +433,7 @@ update msg model =
             , deleteCompletion completion
             )
 
-        MarkTotoAsDone todo now ->
+        MarkTodoAsDone todo now ->
             case model.user of
                 Just user ->
                     let
@@ -395,7 +457,7 @@ update msg model =
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
-    Sub.none
+    Time.every (1000 * 60) Refresh
 
 
 
@@ -404,14 +466,18 @@ subscriptions _ =
 
 view : Model -> Html Msg
 view model =
-    main_
+    div
         []
-        [ case model.user of
-            Just _ ->
-                viewLoggedIn model
+        [ main_
+            []
+            [ case model.user of
+                Just _ ->
+                    viewLoggedIn model
 
-            Nothing ->
-                viewLogin
+                Nothing ->
+                    viewLogin
+            ]
+        , viewToasts model.toasts
         ]
 
 
@@ -470,6 +536,26 @@ viewLogin =
         [ label [ for "name" ] [ text "Votre nom" ]
         , input [ id "name", name "name", required True, onInput UsernameInput ] []
         , button [] [ text "Sauvegarder" ]
+        ]
+
+
+viewToasts : List Toast -> Html Msg
+viewToasts toasts =
+    toasts
+        |> List.indexedMap viewToast
+        |> div [ class "toast-list" ]
+
+
+viewToast : Int -> Toast -> Html Msg
+viewToast index toast =
+    output
+        [ class "toast", attribute "role" "alert" ]
+        [ div
+            []
+            [ div [] [ text toast.title ]
+            , div [ class "message" ] [ text toast.message ]
+            ]
+        , button [ onClick (RemoveToast index) ] [ text "fermer" ]
         ]
 
 
@@ -631,8 +717,8 @@ postCompletion completion =
 
 
 deleteCompletion : Completion -> Cmd Msg
-deleteCompletion { id } =
-    airtableDelete ("/completions/" ++ id) CompletionDeleted (Json.Decode.succeed "Ok")
+deleteCompletion completion =
+    airtableDelete ("/completions/" ++ completion.id) (CompletionDeleted completion) (Json.Decode.succeed "Ok")
 
 
 apiGet : String -> (RemoteData a -> msg) -> Decoder a -> Cmd msg

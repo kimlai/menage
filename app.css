@@ -135,3 +135,43 @@ label + input:not([type=checkbox]) {
   animation-timing-function: var(--ease-squish-5);
   animation-duration: 1s;
 }
+
+/* https://www.youtube.com/watch?v=R75ZVW4LW5o */
+.toast-list {
+  position: fixed;
+  z-index: 1;
+  inset-block-end: 0;
+  inset-inline: 0;
+  padding-block-end: 5vh;
+  display: grid;
+  justify-items: center;
+  justify-content: center;
+  gap: 1vh;
+}
+
+.toast {
+  background: var(--red-9);
+  color: var(--red-1);
+  border-radius: var(--radius-1);
+  padding: var(--size-1) var(--size-3);
+  box-shadow: var(--shadow-6);
+  max-inline-size: min(80ch, 90vw);
+  animation: var(--animation-fade-in), var(--animation-slide-in-up);
+  animation-timing-function: var(--ease-4);
+  animation-duration: 300ms;
+
+  display: flex;
+  gap: var(--size-4);
+}
+
+.toast button {
+  padding: 0;
+  text-decoration: underline;
+  color: reset;
+  background: none;
+  font-size: var(--font-size-0);
+}
+
+.toast .message {
+  font-size: var(--font-size-0);
+}
