@@ -10,6 +10,16 @@ type RemoteData a
     | Success a
 
 
+succeed : a -> RemoteData a
+succeed data =
+    Success data
+
+
+fail : Http.Error -> RemoteData a
+fail error =
+    Failure error
+
+
 withDefault : a -> RemoteData a -> a
 withDefault default data =
     case data of

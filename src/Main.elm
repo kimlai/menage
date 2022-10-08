@@ -6,7 +6,7 @@ import Html.Attributes exposing (attribute, checked, class, for, id, name, requi
 import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
 import Http exposing (Error(..))
 import Iso8601
-import Json.Decode exposing (Decoder, andThen, at, fail, field, list, map3, map4, string, succeed)
+import Json.Decode exposing (Decoder, andThen, at, fail, field, list, map2, map3, map4, string, succeed)
 import Json.Encode as Encode
 import ListExtra
 import Platform exposing (Task)
@@ -107,8 +107,7 @@ init user =
       , toasts = []
       }
     , Cmd.batch
-        [ airtableGetTasks
-        , airtableGet "/completions" GotCompletions completionsDecoder
+        [ getTasksAndCompletions
         , Task.perform GotCurrentTime (Time.now |> Task.andThen (\now -> Task.map (Tuple.pair now) Time.here))
         ]
     )
@@ -314,8 +313,7 @@ toastFromHttpError error =
 
 
 type Msg
-    = GotTasks (RemoteData (List Task))
-    | GotCompletions (RemoteData (List Completion))
+    = GotTasksAndCompletions (RemoteData ( List Task, List Completion ))
     | GotCurrentTime ( Posix, Zone )
     | TodoChecked Todo TodoStatus Bool
     | MarkTodoAsDone Todo Posix
@@ -347,10 +345,7 @@ update msg model =
 
         Refresh now ->
             ( { model | now = Maybe.map (\( _, zone ) -> ( now, zone )) model.now }
-            , Cmd.batch
-                [ airtableGetTasks
-                , airtableGet "/completions" GotCompletions completionsDecoder
-                ]
+            , getTasksAndCompletions
             )
 
         RemoveToast index ->
@@ -360,15 +355,24 @@ update msg model =
             , Cmd.none
             )
 
-        GotTasks tasks ->
-            ( { model | tasks = tasks }
+        GotTasksAndCompletions (Success ( tasks, completions )) ->
+            ( { model
+                | tasks = RemoteData.succeed tasks
+                , completions = RemoteData.succeed completions
+              }
             , Cmd.none
             )
 
-        GotCompletions result ->
-            ( { model | completions = result }
+        GotTasksAndCompletions (Failure error) ->
+            ( { model
+                | tasks = RemoteData.fail error
+                , completions = RemoteData.fail error
+              }
             , Cmd.none
             )
+
+        GotTasksAndCompletions Loading ->
+            ( model, Cmd.none )
 
         CompletionSaved oldCompletion (Failure err) ->
             ( { model
@@ -670,45 +674,9 @@ frequencyToClass frequency =
 -- Http
 
 
-airtableGet : String -> (RemoteData a -> msg) -> Decoder a -> Cmd msg
-airtableGet path msg decoder =
-    airtableRequest "GET" path Http.emptyBody msg decoder
-
-
-airtablePost : String -> Http.Body -> (RemoteData a -> msg) -> Decoder a -> Cmd msg
-airtablePost path body msg decoder =
-    airtableRequest "POST" path body msg decoder
-
-
-airtableDelete : String -> (RemoteData a -> msg) -> Decoder a -> Cmd msg
-airtableDelete path msg decoder =
-    airtableRequest "DELETE" path Http.emptyBody msg decoder
-
-
-airtableRequest : String -> String -> Http.Body -> (RemoteData a -> msg) -> Decoder a -> Cmd msg
-airtableRequest method path body msg decoder =
-    Http.request
-        { method = method
-        , headers = [ Http.header "Authorization" "Bearer keyDcHbvnKUCGYo9l" ]
-        , url = "https://api.airtable.com/v0/appzk3oeSLhSwr9Dd" ++ path
-        , body = body
-        , expect = Http.expectJson (RemoteData.fromResult >> msg) decoder
-        , timeout = Nothing
-        , tracker = Nothing
-        }
-
-
-airtableGetTasks : Cmd Msg
-airtableGetTasks =
-    airtableGet
-        "/tasks?sort%5B0%5D%5Bfield%5D=frequency&sort%5B0%5D%5Bdirection%5D=asc"
-        GotTasks
-        tasksDecoder
-
-
-airTableGetCompletions : Cmd Msg
-airTableGetCompletions =
-    airtableGet "/completions" GotCompletions completionsDecoder
+getTasksAndCompletions : Cmd Msg
+getTasksAndCompletions =
+    apiGet "/get-tasks-and-completions" GotTasksAndCompletions tasksAndCompletionsDecoder
 
 
 postCompletion : Completion -> Cmd Msg
@@ -718,7 +686,7 @@ postCompletion completion =
 
 deleteCompletion : Completion -> Cmd Msg
 deleteCompletion completion =
-    airtableDelete ("/completions/" ++ completion.id) (CompletionDeleted completion) (Json.Decode.succeed "Ok")
+    apiDelete ("/delete-completion?id=" ++ completion.id) (CompletionDeleted completion) (Json.Decode.succeed "Ok")
 
 
 apiGet : String -> (RemoteData a -> msg) -> Decoder a -> Cmd msg
@@ -758,9 +726,11 @@ completionEncoder completion =
         ]
 
 
-tasksDecoder : Decoder (List Task)
-tasksDecoder =
-    field "records" (list taskDecoder)
+tasksAndCompletionsDecoder : Decoder ( List Task, List Completion )
+tasksAndCompletionsDecoder =
+    map2 Tuple.pair
+        (field "tasks" (list taskDecoder))
+        (field "completions" (list completionDecoder))
 
 
 taskDecoder : Decoder Task
@@ -798,11 +768,6 @@ frequencyDecoder =
                     _ ->
                         fail "Could not decode frequency"
             )
-
-
-completionsDecoder : Decoder (List Completion)
-completionsDecoder =
-    field "records" (list completionDecoder)
 
 
 completionDecoder : Decoder Completion

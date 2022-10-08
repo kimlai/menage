@@ -1,6 +1,5 @@
-var Airtable = require('airtable');
-var base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE);
 const webpush = require('web-push');
+const base = require('./airtable');
 
 webpush.setVapidDetails(
   'mailto:hello@kimlaitrinh.me',
