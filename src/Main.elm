@@ -19,7 +19,7 @@ import Time exposing (Posix, Weekday(..), Zone, millisToPosix, posixToMillis, to
 -- Main
 
 
-main : Program (Maybe String) Model Msg
+main : Program (Maybe String) TopModel Msg
 main =
     Browser.element { init = init, update = update, view = view, subscriptions = subscriptions }
 
@@ -28,14 +28,24 @@ main =
 -- Model
 
 
+type TopModel
+    = LoggedOut String (Maybe ( Posix, Zone ))
+    | TopLoading User (Maybe ( Posix, Zone )) (Maybe ( List Task, List Completion ))
+    | TopSuccess Model
+    | TopFailure Http.Error
+
+
 type alias Model =
-    { tasks : RemoteData (List Task)
-    , completions : RemoteData (List Completion)
-    , user : Maybe String
-    , now : Maybe ( Posix, Zone )
-    , usernameInput : String
+    { tasks : List Task
+    , completions : List Completion
+    , user : User
+    , now : ( Posix, Zone )
     , toasts : List Toast
     }
+
+
+type alias User =
+    String
 
 
 type alias TaskID =
@@ -97,32 +107,43 @@ type alias Toast =
     }
 
 
-init : Maybe String -> ( Model, Cmd Msg )
+init : Maybe String -> ( TopModel, Cmd Msg )
 init user =
-    ( { tasks = Loading
-      , completions = Loading
-      , user = user
-      , now = Nothing
-      , usernameInput = ""
-      , toasts = []
-      }
-    , Cmd.batch
-        [ getTasksAndCompletions
-        , Task.perform GotCurrentTime (Time.now |> Task.andThen (\now -> Task.map (Tuple.pair now) Time.here))
-        ]
-    )
-
-
-todoList : Maybe ( Posix, Zone ) -> List Task -> List Completion -> List ( Todo, TodoStatus )
-todoList maybeNow tasks completions =
-    case maybeNow of
-        Just now ->
-            tasks
-                |> List.concatMap (todosFromTask now)
-                |> computeStatus now completions
+    case user of
+        Just name ->
+            ( TopLoading name Nothing Nothing
+            , Cmd.batch
+                [ getTasksAndCompletions
+                , getCurrentTime
+                ]
+            )
 
         Nothing ->
-            []
+            ( LoggedOut "" Nothing
+            , getCurrentTime
+            )
+
+
+getCurrentTime : Cmd Msg
+getCurrentTime =
+    Task.perform GotCurrentTime (Time.now |> Task.andThen (\now -> Task.map (Tuple.pair now) Time.here))
+
+
+initialModel : User -> ( Posix, Zone ) -> ( List Task, List Completion ) -> Model
+initialModel user now ( tasks, completions ) =
+    { tasks = tasks
+    , completions = completions
+    , user = user
+    , now = now
+    , toasts = []
+    }
+
+
+todoList : ( Posix, Zone ) -> List Task -> List Completion -> List ( Todo, TodoStatus )
+todoList now tasks completions =
+    tasks
+        |> List.concatMap (todosFromTask now)
+        |> computeStatus now completions
 
 
 {-| Using a recursive function to go through the list enables removing completions from the potential matches as we go.
@@ -325,26 +346,80 @@ type Msg
     | RemoveToast Int
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
-update msg model =
+update : Msg -> TopModel -> ( TopModel, Cmd Msg )
+update msg topModel =
+    case ( msg, topModel ) of
+        ( GotTasksAndCompletions (Success ( tasks, completions )), TopLoading user Nothing _ ) ->
+            ( TopLoading user Nothing (Just ( tasks, completions ))
+            , Cmd.none
+            )
+
+        ( GotTasksAndCompletions (Success ( tasks, completions )), TopLoading user (Just now) _ ) ->
+            ( TopSuccess (initialModel user now ( tasks, completions ))
+            , Cmd.none
+            )
+
+        ( GotTasksAndCompletions (Success ( tasks, completions )), TopSuccess model ) ->
+            ( TopSuccess { model | tasks = tasks, completions = completions }
+            , Cmd.none
+            )
+
+        ( GotTasksAndCompletions (Failure error), _ ) ->
+            ( TopFailure error
+            , Cmd.none
+            )
+
+        ( GotCurrentTime now, TopLoading user _ Nothing ) ->
+            ( TopLoading user (Just now) Nothing
+            , Cmd.none
+            )
+
+        ( GotCurrentTime now, TopLoading user _ (Just ( tasks, completions )) ) ->
+            ( TopSuccess (initialModel user now ( tasks, completions ))
+            , Cmd.none
+            )
+
+        ( GotCurrentTime now, LoggedOut user _ ) ->
+            ( LoggedOut user (Just now)
+            , Cmd.none
+            )
+
+        ( GotCurrentTime now, TopSuccess model ) ->
+            ( TopSuccess { model | now = now }
+            , Cmd.none
+            )
+
+        ( UsernameInput str, LoggedOut _ now ) ->
+            ( LoggedOut str now
+            , Cmd.none
+            )
+
+        ( SaveUsername, LoggedOut usernameInputValue now ) ->
+            ( TopLoading usernameInputValue now Nothing
+            , Cmd.batch
+                [ setStorage usernameInputValue
+                , getTasksAndCompletions
+                ]
+            )
+
+        ( _, TopSuccess model ) ->
+            let
+                ( newModel, cmd ) =
+                    updateSuccess msg model
+            in
+            ( TopSuccess newModel
+            , cmd
+            )
+
+        ( _, _ ) ->
+            ( topModel, Cmd.none )
+
+
+updateSuccess : Msg -> Model -> ( Model, Cmd Msg )
+updateSuccess msg model =
     case msg of
-        GotCurrentTime hereAndNow ->
-            ( { model | now = Just hereAndNow }
-            , Cmd.none
-            )
-
-        UsernameInput str ->
-            ( { model | usernameInput = str }
-            , Cmd.none
-            )
-
-        SaveUsername ->
-            ( { model | user = Just model.usernameInput, usernameInput = "" }
-            , setStorage model.usernameInput
-            )
-
         Refresh now ->
-            ( { model | now = Maybe.map (\( _, zone ) -> ( now, zone )) model.now }
+            ( { model | now = ( now, Tuple.second model.now ) }
             , getTasksAndCompletions
             )
 
@@ -355,31 +430,10 @@ update msg model =
             , Cmd.none
             )
 
-        GotTasksAndCompletions (Success ( tasks, completions )) ->
-            ( { model
-                | tasks = RemoteData.succeed tasks
-                , completions = RemoteData.succeed completions
-              }
-            , Cmd.none
-            )
-
-        GotTasksAndCompletions (Failure error) ->
-            ( { model
-                | tasks = RemoteData.fail error
-                , completions = RemoteData.fail error
-              }
-            , Cmd.none
-            )
-
-        GotTasksAndCompletions Loading ->
-            ( model, Cmd.none )
-
         CompletionSaved oldCompletion (Failure err) ->
             ( { model
                 | completions =
-                    RemoteData.map
-                        (List.filter (\completion -> completion /= oldCompletion))
-                        model.completions
+                    List.filter (\completion -> completion /= oldCompletion) model.completions
                 , toasts =
                     model.toasts ++ [ toastFromHttpError err ]
               }
@@ -389,15 +443,13 @@ update msg model =
         CompletionSaved oldCompletion (Success savedCompletion) ->
             ( { model
                 | completions =
-                    RemoteData.map
-                        (List.map
-                            (\completion ->
-                                if completion == oldCompletion then
-                                    savedCompletion
+                    List.map
+                        (\completion ->
+                            if completion == oldCompletion then
+                                savedCompletion
 
-                                else
-                                    completion
-                            )
+                            else
+                                completion
                         )
                         model.completions
               }
@@ -411,7 +463,7 @@ update msg model =
 
         CompletionDeleted completion (Failure err) ->
             ( { model
-                | completions = RemoteData.map ((::) completion) model.completions
+                | completions = completion :: model.completions
                 , toasts = model.toasts ++ [ toastFromHttpError err ]
               }
             , Cmd.none
@@ -429,37 +481,49 @@ update msg model =
 
         TodoChecked _ (Done _ _ completion) _ ->
             ( { model
-                | completions =
-                    RemoteData.map
-                        (List.filter (\c -> c /= completion))
-                        model.completions
+                | completions = List.filter (\c -> c /= completion) model.completions
               }
             , deleteCompletion completion
             )
 
         MarkTodoAsDone todo now ->
-            case model.user of
-                Just user ->
-                    let
-                        completion =
-                            Completion "tmp-id" user todo.task.id now
-                    in
-                    ( { model
-                        | completions =
-                            RemoteData.map ((::) completion) model.completions
-                      }
-                    , postCompletion completion
-                    )
+            let
+                completion =
+                    Completion "tmp-id" model.user todo.task.id now
+            in
+            ( { model
+                | completions = completion :: model.completions
+              }
+            , postCompletion completion
+            )
 
-                Nothing ->
-                    ( model, Cmd.none )
+        GotTasksAndCompletions (Success ( tasks, completions )) ->
+            ( { model | tasks = tasks, completions = completions }
+            , Cmd.none
+            )
+
+        GotTasksAndCompletions _ ->
+            ( model
+            , Cmd.none
+            )
+
+        GotCurrentTime now ->
+            ( { model | now = now }
+            , Cmd.none
+            )
+
+        UsernameInput _ ->
+            ( model, Cmd.none )
+
+        SaveUsername ->
+            ( model, Cmd.none )
 
 
 
 -- Subscriptions
 
 
-subscriptions : Model -> Sub Msg
+subscriptions : TopModel -> Sub Msg
 subscriptions _ =
     Time.every (1000 * 60) Refresh
 
@@ -468,79 +532,83 @@ subscriptions _ =
 -- View
 
 
-view : Model -> Html Msg
-view model =
+view : TopModel -> Html Msg
+view topModel =
+    case topModel of
+        LoggedOut _ _ ->
+            main_ [] [ viewLoginForm ]
+
+        TopLoading _ _ _ ->
+            main_ [] [ viewLoading ]
+
+        TopFailure error ->
+            main_ [] [ viewLoadingFailed error ]
+
+        TopSuccess model ->
+            div
+                []
+                [ main_ [] [ viewSuccess model ]
+                , viewToasts model.toasts
+                ]
+
+
+viewSuccess : Model -> Html Msg
+viewSuccess model =
+    let
+        ( done, notDone ) =
+            model.completions
+                |> todoList model.now model.tasks
+                |> List.partition (\( _, status ) -> status /= NotDone)
+
+        sortByCompletedAtDesc =
+            List.sortWith
+                (\( _, a ) ( _, b ) ->
+                    case ( a, b ) of
+                        ( Done _ _ compA, Done _ _ compB ) ->
+                            compare (posixToMillis compB.completedAt) (posixToMillis compA.completedAt)
+
+                        -- all those other branches cannot happen for a list of "done" todos
+                        -- might be worth it to refactor away
+                        ( NotDone, NotDone ) ->
+                            GT
+
+                        ( NotDone, Done _ _ _ ) ->
+                            LT
+
+                        ( Done _ _ _, NotDone ) ->
+                            GT
+                )
+    in
     div
         []
-        [ main_
-            []
-            [ case model.user of
-                Just _ ->
-                    viewLoggedIn model
-
-                Nothing ->
-                    viewLogin
-            ]
-        , viewToasts model.toasts
+        [ viewTodoList 0 (ListExtra.unique notDone)
+        , viewTodoList 1 (sortByCompletedAtDesc done)
         ]
 
 
-viewLoggedIn : Model -> Html Msg
-viewLoggedIn model =
-    case model.tasks of
-        Success tasks ->
-            let
-                ( done, notDone ) =
-                    model.completions
-                        |> RemoteData.withDefault []
-                        |> todoList model.now tasks
-                        |> List.partition (\( _, status ) -> status /= NotDone)
-
-                sortByCompletedAtDesc =
-                    List.sortWith
-                        (\( _, a ) ( _, b ) ->
-                            case ( a, b ) of
-                                ( Done _ _ compA, Done _ _ compB ) ->
-                                    compare (posixToMillis compB.completedAt) (posixToMillis compA.completedAt)
-
-                                -- all those other branches cannot happen for a list of "done" todos
-                                -- might be worth it to refactor away
-                                ( NotDone, NotDone ) ->
-                                    GT
-
-                                ( NotDone, Done _ _ _ ) ->
-                                    LT
-
-                                ( Done _ _ _, NotDone ) ->
-                                    GT
-                        )
-            in
-            div
-                []
-                [ viewTodoList 0 (ListExtra.unique notDone)
-                , viewTodoList 1 (sortByCompletedAtDesc done)
-                ]
-
-        Loading ->
-            text "Chargement des tâches"
-
-        Failure err ->
-            case err of
-                BadBody message ->
-                    text ("Erreur de chargement des tâches: " ++ message)
-
-                _ ->
-                    text "Erreur de chargement des tâches"
-
-
-viewLogin : Html Msg
-viewLogin =
+viewLoginForm : Html Msg
+viewLoginForm =
     form
         [ onSubmit SaveUsername ]
         [ label [ for "name" ] [ text "Votre nom" ]
         , input [ id "name", name "name", required True, onInput UsernameInput ] []
         , button [] [ text "Sauvegarder" ]
         ]
+
+
+viewLoading : Html msg
+viewLoading =
+    text "Chargement des tâches"
+
+
+viewLoadingFailed : Http.Error -> Html msg
+viewLoadingFailed err =
+    case err of
+        BadBody message ->
+            text ("Erreur de chargement des tâches: " ++ message)
+
+        _ ->
+            text "Erreur de chargement des tâches"
 
 
 viewToasts : List Toast -> Html Msg
