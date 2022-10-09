@@ -9,10 +9,10 @@ import Iso8601
 import Json.Decode exposing (Decoder, andThen, at, fail, field, list, map2, map3, map4, string, succeed)
 import Json.Encode as Encode
 import ListExtra
-import Platform exposing (Task)
 import RemoteData exposing (RemoteData(..))
 import Task
-import Time exposing (Posix, Weekday(..), Zone, millisToPosix, posixToMillis, toHour, toMillis, toMinute, toSecond)
+import Time exposing (Posix, Weekday(..), Zone, posixToMillis)
+import TodoList exposing (..)
 
 
 
@@ -30,75 +30,18 @@ main =
 
 type TopModel
     = LoggedOut String (Maybe ( Posix, Zone ))
-    | TopLoading User (Maybe ( Posix, Zone )) (Maybe ( List Task, List Completion ))
+    | TopLoading User (Maybe ( Posix, Zone )) (Maybe ( List TaskDefinition, List Completion ))
     | TopSuccess Model
     | TopFailure Http.Error
 
 
 type alias Model =
-    { tasks : List Task
+    { tasks : List TaskDefinition
     , completions : List Completion
     , user : User
     , now : ( Posix, Zone )
     , toasts : List Toast
     }
-
-
-type alias User =
-    String
-
-
-type alias TaskID =
-    String
-
-
-type alias Task =
-    { id : TaskID
-    , name : TaskName
-    , frequency : Frequency
-    }
-
-
-type Frequency
-    = TwiceADay
-    | FourTimesAWeek
-    | TwiceAWeek
-    | EveryWeek
-    | EveryOtherWeek
-    | EveryMonth
-
-
-type alias TaskName =
-    String
-
-
-type alias CompletionID =
-    String
-
-
-type alias Completion =
-    { id : CompletionID
-    , user : String
-    , taskId : String
-    , completedAt : Posix
-    }
-
-
-type alias Todo =
-    { task : Task
-    , start : Posix
-    }
-
-
-type TodoStatus
-    = Done String TimeAgo Completion
-    | NotDone
-
-
-type TimeAgo
-    = DaysAgo Int
-    | WeeksAgo Int
-    | LongAgo
 
 
 type alias Toast =
@@ -129,7 +72,7 @@ getCurrentTime =
     Task.perform GotCurrentTime (Time.now |> Task.andThen (\now -> Task.map (Tuple.pair now) Time.here))
 
 
-initialModel : User -> ( Posix, Zone ) -> ( List Task, List Completion ) -> Model
+initialModel : User -> ( Posix, Zone ) -> ( List TaskDefinition, List Completion ) -> Model
 initialModel user now ( tasks, completions ) =
     { tasks = tasks
     , completions = completions
@@ -137,169 +80,6 @@ initialModel user now ( tasks, completions ) =
     , now = now
     , toasts = []
     }
-
-
-todoList : ( Posix, Zone ) -> List Task -> List Completion -> List ( Todo, TodoStatus )
-todoList now tasks completions =
-    tasks
-        |> List.concatMap (todosFromTask now)
-        |> computeStatus now completions
-
-
-{-| Using a recursive function to go through the list enables removing completions from the potential matches as we go.
--}
-computeStatus : ( Posix, Zone ) -> List Completion -> List Todo -> List ( Todo, TodoStatus )
-computeStatus now completions todos =
-    case todos of
-        [] ->
-            []
-
-        todo :: rest ->
-            let
-                status =
-                    todoStatus now completions todo
-
-                completionsLeft =
-                    case status of
-                        Done _ _ completion ->
-                            List.filter (\c -> c /= completion) completions
-
-                        NotDone ->
-                            completions
-            in
-            ( todo, status ) :: computeStatus now completionsLeft rest
-
-
-todosFromTask : ( Posix, Zone ) -> Task -> List Todo
-todosFromTask now task =
-    let
-        thisWeek =
-            { task = task
-            , start = lastMonday now
-            }
-
-        today_ =
-            { task = task
-            , start = today now
-            }
-    in
-    case task.frequency of
-        TwiceADay ->
-            List.repeat 2 today_
-
-        FourTimesAWeek ->
-            List.repeat 4 thisWeek
-
-        TwiceAWeek ->
-            List.repeat 2 thisWeek
-
-        EveryWeek ->
-            [ thisWeek ]
-
-        EveryOtherWeek ->
-            [ { task = task
-              , start = lastHalfDayOfMonth now
-              }
-            ]
-
-        EveryMonth ->
-            [ { task = task
-              , start = firstDayOfMonth now
-              }
-            ]
-
-
-previousDay : Posix -> Posix
-previousDay time =
-    millisToPosix
-        (posixToMillis time - 1000 * 60 * 60 * 24)
-
-
-atMidnight : Posix -> Zone -> Posix
-atMidnight time zone =
-    let
-        hours =
-            toHour zone time * 60 * 60 * 1000
-
-        minutes =
-            toMinute zone time * 60 * 1000
-
-        seconds =
-            toSecond zone time * 1000
-
-        millis =
-            toMillis zone time
-    in
-    millisToPosix
-        (posixToMillis time - hours - minutes - seconds - millis)
-
-
-today : ( Posix, Zone ) -> Posix
-today ( now, zone ) =
-    atMidnight now zone
-
-
-lastMonday : ( Posix, Zone ) -> Posix
-lastMonday ( now, zone ) =
-    if Time.toWeekday zone now == Mon then
-        atMidnight now zone
-
-    else
-        lastMonday ( previousDay now, zone )
-
-
-firstDayOfMonth : ( Posix, Zone ) -> Posix
-firstDayOfMonth ( now, zone ) =
-    if Time.toDay zone now == 1 then
-        atMidnight now zone
-
-    else
-        firstDayOfMonth ( previousDay now, zone )
-
-
-lastHalfDayOfMonth : ( Posix, Zone ) -> Posix
-lastHalfDayOfMonth ( now, zone ) =
-    if Time.toDay zone now == 1 || Time.toDay zone now == 15 then
-        atMidnight now zone
-
-    else
-        lastHalfDayOfMonth ( previousDay now, zone )
-
-
-todoStatus : ( Posix, Zone ) -> List Completion -> Todo -> TodoStatus
-todoStatus now completions todo =
-    completions
-        |> List.filter (completionMatchesTodo todo)
-        |> List.head
-        |> Maybe.map
-            (\completion ->
-                Done completion.user (timeAgo completion.completedAt now) completion
-            )
-        |> Maybe.withDefault NotDone
-
-
-completionMatchesTodo : Todo -> Completion -> Bool
-completionMatchesTodo todo completion =
-    completion.taskId == todo.task.id && posixToMillis completion.completedAt > posixToMillis todo.start
-
-
-timeAgo : Posix -> ( Time.Posix, Zone ) -> TimeAgo
-timeAgo time ( now, zone ) =
-    let
-        deltaInMillis =
-            posixToMillis (atMidnight now zone) - posixToMillis (atMidnight time zone)
-
-        deltaInDays =
-            floor (toFloat deltaInMillis / 1000 / 60 / 60 / 24)
-    in
-    if deltaInDays < 7 then
-        DaysAgo deltaInDays
-
-    else if deltaInDays < 30 then
-        WeeksAgo (floor (toFloat deltaInDays / 7))
-
-    else
-        LongAgo
 
 
 toastFromHttpError : Http.Error -> Toast
@@ -334,10 +114,10 @@ toastFromHttpError error =
 
 
 type Msg
-    = GotTasksAndCompletions (RemoteData ( List Task, List Completion ))
+    = GotTasksAndCompletions (RemoteData ( List TaskDefinition, List Completion ))
     | GotCurrentTime ( Posix, Zone )
-    | TodoChecked Todo TodoStatus Bool
-    | MarkTodoAsDone Todo Posix
+    | TodoChecked TodoItem Bool
+    | MarkTodoAsDone TodoItem Posix
     | CompletionSaved Completion (RemoteData Completion)
     | CompletionDeleted Completion (RemoteData String)
     | UsernameInput String
@@ -474,17 +254,19 @@ updateSuccess msg model =
             , Cmd.none
             )
 
-        TodoChecked todo NotDone _ ->
-            ( model
-            , Task.perform (MarkTodoAsDone todo) Time.now
-            )
+        TodoChecked todoItem _ ->
+            case todoItem.status of
+                NotDone ->
+                    ( model
+                    , Task.perform (MarkTodoAsDone todoItem) Time.now
+                    )
 
-        TodoChecked _ (Done _ _ completion) _ ->
-            ( { model
-                | completions = List.filter (\c -> c /= completion) model.completions
-              }
-            , deleteCompletion completion
-            )
+                Done _ _ completion ->
+                    ( { model
+                        | completions = List.filter (\c -> c /= completion) model.completions
+                      }
+                    , deleteCompletion completion
+                    )
 
         MarkTodoAsDone todo now ->
             let
@@ -557,13 +339,13 @@ viewSuccess model =
     let
         ( done, notDone ) =
             model.completions
-                |> todoList model.now model.tasks
-                |> List.partition (\( _, status ) -> status /= NotDone)
+                |> TodoList.fromTasksAndCompletions model.now model.tasks
+                |> List.partition (\todoItem -> todoItem.status /= NotDone)
 
         sortByCompletedAtDesc =
             List.sortWith
-                (\( _, a ) ( _, b ) ->
-                    case ( a, b ) of
+                (\a b ->
+                    case ( a.status, b.status ) of
                         ( Done _ _ compA, Done _ _ compB ) ->
                             compare (posixToMillis compB.completedAt) (posixToMillis compA.completedAt)
 
@@ -631,18 +413,18 @@ viewToast index toast =
         ]
 
 
-viewTodoList : Int -> List ( Todo, TodoStatus ) -> Html Msg
+viewTodoList : Int -> List TodoItem -> Html Msg
 viewTodoList i todoList_ =
     todoList_
-        |> List.indexedMap (\j todos -> viewTodo (String.fromInt i ++ String.fromInt j) todos)
+        |> List.indexedMap (\j todolist -> viewTodo (String.fromInt i ++ String.fromInt j) todolist)
         |> ul [ attribute "role" "list" ]
 
 
-viewTodo : String -> ( Todo, TodoStatus ) -> Html Msg
-viewTodo index ( todo, status ) =
+viewTodo : String -> TodoItem -> Html Msg
+viewTodo index todoItem =
     let
         isDone =
-            case status of
+            case todoItem.status of
                 Done _ _ _ ->
                     True
 
@@ -650,15 +432,17 @@ viewTodo index ( todo, status ) =
                     False
 
         id_ =
-            todo.task.name ++ index
+            todoItem.task.name ++ index
     in
     li
         [ class "todo" ]
-        [ div [] [ input [ type_ "checkbox", checked isDone, id id_, onCheck (TodoChecked todo status) ] [] ]
+        [ div
+            []
+            [ input [ type_ "checkbox", checked isDone, id id_, onCheck (TodoChecked todoItem) ] [] ]
         , div
             []
-            [ label [ for id_ ] [ text todo.task.name ]
-            , case status of
+            [ label [ for id_ ] [ text todoItem.task.name ]
+            , case todoItem.status of
                 Done user timeAgo_ _ ->
                     div
                         [ class "completion-tags" ]
@@ -667,7 +451,9 @@ viewTodo index ( todo, status ) =
                         ]
 
                 NotDone ->
-                    div [ class ("tag " ++ frequencyToClass todo.task.frequency) ] [ text (frequencyToString todo.task.frequency) ]
+                    div
+                        [ class ("tag " ++ frequencyToClass todoItem.task.frequency) ]
+                        [ text (frequencyToString todoItem.task.frequency) ]
             ]
         ]
 
@@ -794,16 +580,16 @@ completionEncoder completion =
         ]
 
 
-tasksAndCompletionsDecoder : Decoder ( List Task, List Completion )
+tasksAndCompletionsDecoder : Decoder ( List TaskDefinition, List Completion )
 tasksAndCompletionsDecoder =
     map2 Tuple.pair
         (field "tasks" (list taskDecoder))
         (field "completions" (list completionDecoder))
 
 
-taskDecoder : Decoder Task
+taskDecoder : Decoder TaskDefinition
 taskDecoder =
-    map3 Task
+    map3 TaskDefinition
         (field "id" string)
         (at [ "fields", "name" ] string)
         (at [ "fields", "frequency" ] frequencyDecoder)
