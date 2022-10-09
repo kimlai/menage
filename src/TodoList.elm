@@ -44,9 +44,10 @@ type alias Completion =
 
 
 type alias Task =
-    { task: TaskDefinition
+    { task : TaskDefinition
     , start : Posix
     }
+
 
 type alias TodoItem =
     { task : TaskDefinition
@@ -123,10 +124,10 @@ tasksFromDefinition now task =
             [ thisWeek ]
 
         EveryOtherWeek ->
-            [ { task = task
-              , start = lastHalfDayOfMonth now
-              }
-            ]
+            List.repeat 2
+                { task = task
+                , start = firstDayOfMonth now
+                }
 
         EveryMonth ->
             [ { task = task
