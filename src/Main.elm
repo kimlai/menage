@@ -362,7 +362,7 @@ viewSuccess model =
                 )
     in
     div
-        []
+        [ class "todolists-container" ]
         [ viewTodoListNotDone 0 (ListExtra.uniqueWithCount notDone)
         , viewTodoListDone 1 (sortByCompletedAtDesc done)
         ]

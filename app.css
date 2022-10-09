@@ -13,15 +13,23 @@ body {
 }
 
 main {
-  padding-block: 5vh;
+  padding-block: 10vh;
+  padding-inline: var(--size-6);
+}
+
+.todolists-container {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--size-10);
+}
+
+ul[role=list] {
+  padding-inline-start: 0;
 }
 
 ul[role=list] > li + li {
   margin-top: var(--size-3);
-}
-
-ul + ul {
-  margin-top: var(--size-8);
 }
 
 form input,
