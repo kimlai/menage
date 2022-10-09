@@ -363,8 +363,8 @@ viewSuccess model =
     in
     div
         []
-        [ viewTodoList 0 (ListExtra.unique notDone)
-        , viewTodoList 1 (sortByCompletedAtDesc done)
+        [ viewTodoListNotDone 0 (ListExtra.uniqueWithCount notDone)
+        , viewTodoListDone 1 (sortByCompletedAtDesc done)
         ]
 
 
@@ -413,24 +413,23 @@ viewToast index toast =
         ]
 
 
-viewTodoList : Int -> List TodoItem -> Html Msg
-viewTodoList i todoList_ =
+viewTodoListDone : Int -> List TodoItem -> Html Msg
+viewTodoListDone i todoList_ =
     todoList_
-        |> List.indexedMap (\j todolist -> viewTodo (String.fromInt i ++ String.fromInt j) todolist)
+        |> List.indexedMap (\j todolist -> viewTodoDone (String.fromInt i ++ String.fromInt j) todolist)
         |> ul [ attribute "role" "list" ]
 
 
-viewTodo : String -> TodoItem -> Html Msg
-viewTodo index todoItem =
+viewTodoListNotDone : Int -> List ( TodoItem, Int ) -> Html Msg
+viewTodoListNotDone i todoList_ =
+    todoList_
+        |> List.indexedMap (\j todolist -> viewTodoNotDone (String.fromInt i ++ String.fromInt j) todolist)
+        |> ul [ attribute "role" "list" ]
+
+
+viewTodoDone : String -> TodoItem -> Html Msg
+viewTodoDone index todoItem =
     let
-        isDone =
-            case todoItem.status of
-                Done _ _ _ ->
-                    True
-
-                NotDone ->
-                    False
-
         id_ =
             todoItem.task.name ++ index
     in
@@ -438,7 +437,7 @@ viewTodo index todoItem =
         [ class "todo" ]
         [ div
             []
-            [ input [ type_ "checkbox", checked isDone, id id_, onCheck (TodoChecked todoItem) ] [] ]
+            [ input [ type_ "checkbox", checked True, id id_, onCheck (TodoChecked todoItem) ] [] ]
         , div
             []
             [ label [ for id_ ] [ text todoItem.task.name ]
@@ -453,7 +452,37 @@ viewTodo index todoItem =
                 NotDone ->
                     div
                         [ class ("tag " ++ frequencyToClass todoItem.task.frequency) ]
-                        [ text (frequencyToString todoItem.task.frequency) ]
+                        [ text (frequencyToString todoItem.task.frequency 1) ]
+            ]
+        ]
+
+
+viewTodoNotDone : String -> ( TodoItem, Int ) -> Html Msg
+viewTodoNotDone index ( todoItem, count ) =
+    let
+        id_ =
+            todoItem.task.name ++ index
+    in
+    li
+        [ class "todo" ]
+        [ div
+            []
+            [ input [ type_ "checkbox", checked False, id id_, onCheck (TodoChecked todoItem) ] [] ]
+        , div
+            []
+            [ label [ for id_ ] [ text todoItem.task.name ]
+            , case todoItem.status of
+                Done user timeAgo_ _ ->
+                    div
+                        [ class "completion-tags" ]
+                        [ div [ class "tag user" ] [ text user ]
+                        , div [ class "tag time-ago" ] [ text (viewTimeAgo timeAgo_) ]
+                        ]
+
+                NotDone ->
+                    div
+                        [ class ("tag " ++ frequencyToClass todoItem.task.frequency) ]
+                        [ text (frequencyToString todoItem.task.frequency count) ]
             ]
         ]
 
@@ -480,26 +509,62 @@ viewTimeAgo timeAgo_ =
             "il y a plus d'un mois"
 
 
-frequencyToString : Frequency -> String
-frequencyToString frequency =
+frequencyToString : Frequency -> Int -> String
+frequencyToString frequency count =
     case frequency of
         TwiceADay ->
-            "2x/jour"
+            "aujourd'hui"
+                ++ (if count > 1 then
+                        " (x" ++ String.fromInt count ++ ")"
+
+                    else
+                        ""
+                   )
 
         FourTimesAWeek ->
-            "4x/semaine"
+            "cette semaine"
+                ++ (if count > 1 then
+                        " (x" ++ String.fromInt count ++ ")"
+
+                    else
+                        ""
+                   )
 
         TwiceAWeek ->
-            "2x/semaine"
+            "cette semaine"
+                ++ (if count > 1 then
+                        " (x" ++ String.fromInt count ++ ")"
+
+                    else
+                        ""
+                   )
 
         EveryWeek ->
-            "1x/semaine"
+            "cette semaine"
+                ++ (if count > 1 then
+                        " (x" ++ String.fromInt count ++ ")"
+
+                    else
+                        ""
+                   )
 
         EveryOtherWeek ->
-            "2x/mois"
+            "ce mois-ci"
+                ++ (if count > 1 then
+                        " (x" ++ String.fromInt count ++ ")"
+
+                    else
+                        ""
+                   )
 
         EveryMonth ->
-            "1x/mois"
+            "ce mois-ci"
+                ++ (if count > 1 then
+                        " (x" ++ String.fromInt count ++ ")"
+
+                    else
+                        ""
+                   )
 
 
 frequencyToClass : Frequency -> String
