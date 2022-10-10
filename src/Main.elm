@@ -29,13 +29,13 @@ main =
 
 
 type TopModel
-    = LoggedOut LoggedOutModel
+    = Login LoginModel
     | TopLoading LoadingModel
     | TopSuccess Model
     | TopFailure FailureModel
 
 
-type alias LoggedOutModel =
+type alias LoginModel =
     { usernameInputValue : String
     , maybeNow : Maybe ( Posix, Zone )
     }
@@ -80,7 +80,7 @@ init user =
             )
 
         Nothing ->
-            ( LoggedOut (LoggedOutModel "" Nothing)
+            ( Login (LoginModel "" Nothing)
             , getCurrentTime
             )
 
@@ -193,8 +193,8 @@ update msg topModel =
                     , Cmd.none
                     )
 
-        ( GotCurrentTime now, LoggedOut model ) ->
-            ( LoggedOut { model | maybeNow = Just now }
+        ( GotCurrentTime now, Login model ) ->
+            ( Login { model | maybeNow = Just now }
             , Cmd.none
             )
 
@@ -203,12 +203,12 @@ update msg topModel =
             , Cmd.none
             )
 
-        ( UsernameInput str, LoggedOut model ) ->
-            ( LoggedOut { model | usernameInputValue = str }
+        ( UsernameInput str, Login model ) ->
+            ( Login { model | usernameInputValue = str }
             , Cmd.none
             )
 
-        ( SaveUsername, LoggedOut model ) ->
+        ( SaveUsername, Login model ) ->
             ( TopLoading (LoadingModel model.usernameInputValue model.maybeNow Nothing)
             , Cmd.batch
                 [ setStorage model.usernameInputValue
@@ -351,7 +351,7 @@ subscriptions _ =
 view : TopModel -> Html Msg
 view topModel =
     case topModel of
-        LoggedOut _ ->
+        Login _ ->
             main_ [] [ viewLoginForm ]
 
         TopLoading _ ->
