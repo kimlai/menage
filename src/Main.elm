@@ -29,10 +29,28 @@ main =
 
 
 type TopModel
-    = LoggedOut String (Maybe ( Posix, Zone ))
-    | TopLoading User (Maybe ( Posix, Zone )) (Maybe ( List TaskDefinition, List Completion ))
+    = LoggedOut LoggedOutModel
+    | TopLoading LoadingModel
     | TopSuccess Model
-    | TopFailure Http.Error
+    | TopFailure FailureModel
+
+
+type alias LoggedOutModel =
+    { usernameInputValue : String
+    , maybeNow : Maybe ( Posix, Zone )
+    }
+
+
+type alias LoadingModel =
+    { user : User
+    , maybeNow : Maybe ( Posix, Zone )
+    , maybeTasksAndCompletions : Maybe ( List TaskDefinition, List Completion )
+    }
+
+
+type alias FailureModel =
+    { error: Http.Error
+    }
 
 
 type alias Model =
@@ -54,7 +72,7 @@ init : Maybe String -> ( TopModel, Cmd Msg )
 init user =
     case user of
         Just name ->
-            ( TopLoading name Nothing Nothing
+            ( TopLoading (LoadingModel name Nothing Nothing)
             , Cmd.batch
                 [ getTasksAndCompletions
                 , getCurrentTime
@@ -62,7 +80,7 @@ init user =
             )
 
         Nothing ->
-            ( LoggedOut "" Nothing
+            ( LoggedOut (LoggedOutModel "" Nothing)
             , getCurrentTime
             )
 
@@ -129,15 +147,17 @@ type Msg
 update : Msg -> TopModel -> ( TopModel, Cmd Msg )
 update msg topModel =
     case ( msg, topModel ) of
-        ( GotTasksAndCompletions (Success ( tasks, completions )), TopLoading user Nothing _ ) ->
-            ( TopLoading user Nothing (Just ( tasks, completions ))
-            , Cmd.none
-            )
+        ( GotTasksAndCompletions (Success tasksAndCompletions), TopLoading model ) ->
+            case model.maybeNow of
+                Just now ->
+                    ( TopSuccess (initialModel model.user now tasksAndCompletions)
+                    , Cmd.none
+                    )
 
-        ( GotTasksAndCompletions (Success ( tasks, completions )), TopLoading user (Just now) _ ) ->
-            ( TopSuccess (initialModel user now ( tasks, completions ))
-            , Cmd.none
-            )
+                Nothing ->
+                    ( TopLoading { model | maybeTasksAndCompletions = Just tasksAndCompletions }
+                    , Cmd.none
+                    )
 
         ( GotTasksAndCompletions (Success ( tasks, completions )), TopSuccess model ) ->
             ( TopSuccess { model | tasks = tasks, completions = completions }
@@ -145,22 +165,24 @@ update msg topModel =
             )
 
         ( GotTasksAndCompletions (Failure error), _ ) ->
-            ( TopFailure error
+            ( TopFailure (FailureModel error)
             , Cmd.none
             )
 
-        ( GotCurrentTime now, TopLoading user _ Nothing ) ->
-            ( TopLoading user (Just now) Nothing
-            , Cmd.none
-            )
+        ( GotCurrentTime now, TopLoading model ) ->
+            case model.maybeTasksAndCompletions of
+                Just tasksAndCompletions ->
+                    ( TopSuccess (initialModel model.user now tasksAndCompletions)
+                    , Cmd.none
+                    )
 
-        ( GotCurrentTime now, TopLoading user _ (Just ( tasks, completions )) ) ->
-            ( TopSuccess (initialModel user now ( tasks, completions ))
-            , Cmd.none
-            )
+                Nothing ->
+                    ( TopLoading { model | maybeNow = Just now }
+                    , Cmd.none
+                    )
 
-        ( GotCurrentTime now, LoggedOut user _ ) ->
-            ( LoggedOut user (Just now)
+        ( GotCurrentTime now, LoggedOut model ) ->
+            ( LoggedOut { model | maybeNow =  Just now }
             , Cmd.none
             )
 
@@ -169,15 +191,15 @@ update msg topModel =
             , Cmd.none
             )
 
-        ( UsernameInput str, LoggedOut _ now ) ->
-            ( LoggedOut str now
+        ( UsernameInput str, LoggedOut model ) ->
+            ( LoggedOut { model | usernameInputValue = str }
             , Cmd.none
             )
 
-        ( SaveUsername, LoggedOut usernameInputValue now ) ->
-            ( TopLoading usernameInputValue now Nothing
+        ( SaveUsername, LoggedOut model ) ->
+            ( TopLoading (LoadingModel model.usernameInputValue model.maybeNow Nothing)
             , Cmd.batch
-                [ setStorage usernameInputValue
+                [ setStorage model.usernameInputValue
                 , getTasksAndCompletions
                 ]
             )
@@ -317,13 +339,13 @@ subscriptions _ =
 view : TopModel -> Html Msg
 view topModel =
     case topModel of
-        LoggedOut _ _ ->
+        LoggedOut _ ->
             main_ [] [ viewLoginForm ]
 
-        TopLoading _ _ _ ->
+        TopLoading _ ->
             main_ [] [ viewLoading ]
 
-        TopFailure error ->
+        TopFailure { error } ->
             main_ [] [ viewLoadingFailed error ]
 
         TopSuccess model ->
