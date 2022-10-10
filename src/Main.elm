@@ -49,7 +49,7 @@ type alias LoadingModel =
 
 
 type alias FailureModel =
-    { error: Http.Error
+    { error : Http.Error
     }
 
 
@@ -164,8 +164,20 @@ update msg topModel =
             , Cmd.none
             )
 
-        ( GotTasksAndCompletions (Failure error), _ ) ->
+        ( GotTasksAndCompletions (Failure error), TopLoading _ ) ->
             ( TopFailure (FailureModel error)
+            , Cmd.none
+            )
+
+        ( GotTasksAndCompletions (Failure error), TopSuccess model ) ->
+            let
+                toast =
+                    toastFromHttpError error
+            in
+            ( TopSuccess
+                { model
+                    | toasts = model.toasts ++ [ { toast | message = "Nous n'avons pas pu rafraîchr les données" } ]
+                }
             , Cmd.none
             )
 
@@ -182,7 +194,7 @@ update msg topModel =
                     )
 
         ( GotCurrentTime now, LoggedOut model ) ->
-            ( LoggedOut { model | maybeNow =  Just now }
+            ( LoggedOut { model | maybeNow = Just now }
             , Cmd.none
             )
 
