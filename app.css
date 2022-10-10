@@ -17,7 +17,16 @@ main {
   padding-inline: var(--size-6);
 }
 
+h2 {
+  margin-block-end: var(--size-8);
+}
+
+.loading-error {
+  max-width: 60ch;
+}
+
 .todolists-container {
+  min-height: 100vh;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -28,7 +37,7 @@ ul[role=list] {
   padding-inline-start: 0;
 }
 
-ul[role=list] > li + li {
+ul > li + li {
   margin-top: var(--size-3);
 }
 
@@ -75,6 +84,7 @@ label + input:not([type=checkbox]) {
   padding: 0 var(--size-2);
   border-radius: var(--radius-4);
   box-shadow: var(--shadow-1);
+  white-space: nowrap;
 }
 
 .tag.user {
@@ -114,6 +124,16 @@ label + input:not([type=checkbox]) {
   display: flex;
   flex-wrap: wrap;
   gap: var(--size-2);
+}
+
+.history {
+  padding-block-start: 10vh;
+}
+
+
+td + td {
+  padding: var(--size-2);
+  vertical-align: baseline;
 }
 
 .notification-button {

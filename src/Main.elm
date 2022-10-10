@@ -1,12 +1,12 @@
 port module Main exposing (..)
 
 import Browser
-import Html exposing (Html, button, div, form, input, label, li, main_, output, text, ul)
+import Html exposing (Html, button, div, form, h2, input, label, li, main_, output, span, table, tbody, td, text, tr, ul)
 import Html.Attributes exposing (attribute, checked, class, for, id, name, required, type_)
 import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
 import Http exposing (Error(..))
 import Iso8601
-import Json.Decode exposing (Decoder, andThen, at, fail, field, list, map2, map3, map4, string, succeed)
+import Json.Decode exposing (Decoder, andThen, at, fail, field, list, map2, map3, map5, string, succeed)
 import Json.Encode as Encode
 import ListExtra
 import RemoteData exposing (RemoteData(..))
@@ -305,7 +305,7 @@ updateSuccess msg model =
         MarkTodoAsDone todo now ->
             let
                 completion =
-                    Completion "tmp-id" model.user todo.task.id now
+                    Completion "tmp-id" model.user todo.task.id todo.task.name now
             in
             ( { model
                 | completions = completion :: model.completions
@@ -363,12 +363,12 @@ view topModel =
         TopSuccess model ->
             div
                 []
-                [ main_ [] [ viewSuccess model ]
+                [ main_ [] (viewSuccess model)
                 , viewToasts model.toasts
                 ]
 
 
-viewSuccess : Model -> Html Msg
+viewSuccess : Model -> List (Html Msg)
 viewSuccess model =
     let
         ( done, notDone ) =
@@ -395,11 +395,13 @@ viewSuccess model =
                             GT
                 )
     in
-    div
+    [ div
         [ class "todolists-container" ]
         [ viewTodoListNotDone 0 (ListExtra.uniqueWithCount notDone)
         , viewTodoListDone 1 (sortByCompletedAtDesc done)
         ]
+    , viewHistory model.now (model.completions |> List.sortBy (.completedAt >> posixToMillis) |> List.reverse)
+    ]
 
 
 viewLoginForm : Html Msg
@@ -419,12 +421,15 @@ viewLoading =
 
 viewLoadingFailed : Http.Error -> Html msg
 viewLoadingFailed err =
-    case err of
-        BadBody message ->
-            text ("Erreur de chargement des tâches: " ++ message)
+    div
+        [ class "loading-error" ]
+        [ case err of
+            BadBody message ->
+                text ("Erreur de chargement des tâches: " ++ message)
 
-        _ ->
-            text "Erreur de chargement des tâches"
+            _ ->
+                text "Erreur de chargement des tâches"
+        ]
 
 
 viewToasts : List Toast -> Html Msg
@@ -480,7 +485,7 @@ viewTodoDone index todoItem =
                     div
                         [ class "completion-tags" ]
                         [ div [ class "tag user" ] [ text user ]
-                        , div [ class "tag time-ago" ] [ text (viewTimeAgo timeAgo_) ]
+                        , div [ class "tag time-ago" ] [ text (viewTimeAgo timeAgo_ False) ]
                         ]
 
                 NotDone ->
@@ -510,7 +515,7 @@ viewTodoNotDone index ( todoItem, count ) =
                     div
                         [ class "completion-tags" ]
                         [ div [ class "tag user" ] [ text user ]
-                        , div [ class "tag time-ago" ] [ text (viewTimeAgo timeAgo_) ]
+                        , div [ class "tag time-ago" ] [ text (viewTimeAgo timeAgo_ False) ]
                         ]
 
                 NotDone ->
@@ -521,8 +526,8 @@ viewTodoNotDone index ( todoItem, count ) =
         ]
 
 
-viewTimeAgo : TimeAgo -> String
-viewTimeAgo timeAgo_ =
+viewTimeAgo : TimeAgo -> Bool -> String
+viewTimeAgo timeAgo_ short =
     case timeAgo_ of
         DaysAgo 0 ->
             "aujourd'hui"
@@ -531,16 +536,28 @@ viewTimeAgo timeAgo_ =
             "hier"
 
         DaysAgo days ->
-            "il y a " ++ String.fromInt days ++ " jours"
+            if short then
+                String.fromInt days ++ " jours"
+            else
+                "il y a " ++ String.fromInt days ++ " jours"
 
         WeeksAgo 1 ->
-            "la semaine dernière"
+            if short then
+              "-1semaine"
+            else
+              "la semaine dernière"
 
         WeeksAgo weeks ->
-            "il y a " ++ String.fromInt weeks ++ " semaines"
+            if short then
+                String.fromInt weeks ++ " semaines"
+            else
+                "il y a " ++ String.fromInt weeks ++ " semaines"
 
         LongAgo ->
-            "il y a plus d'un mois"
+            if short then
+                "+ d'un mois"
+            else
+                "il y a plus d'un mois"
 
 
 frequencyToString : Frequency -> Int -> String
@@ -621,6 +638,28 @@ frequencyToClass frequency =
 
         EveryMonth ->
             "every-month"
+
+
+viewHistory : ( Posix, Zone ) -> List Completion -> Html msg
+viewHistory now completions =
+    div
+        [ class "history" ]
+        [ h2 [] [ text "Historique" ]
+        , table []
+            [ tbody []
+                (List.map (viewCompletion now) completions)
+            ]
+        ]
+
+
+viewCompletion : ( Posix, Zone ) -> Completion -> Html msg
+viewCompletion now completion =
+    tr
+        [ class "completion" ]
+        [ td [] [ text completion.taskName ]
+        , td [] [ span [ class "tag time-ago" ] [ text (viewTimeAgo (TodoList.timeAgo completion.completedAt now) True) ] ]
+        , td [] [ span [ class "tag user" ] [ text completion.user ] ]
+        ]
 
 
 
@@ -725,24 +764,25 @@ frequencyDecoder =
 
 completionDecoder : Decoder Completion
 completionDecoder =
-    map4 Completion
+    map5 Completion
         (field "id" string)
         (at [ "fields", "user" ] string)
-        (at [ "fields", "task" ] taskIdDecoder)
+        (at [ "fields", "task" ] singleElementArrayDecoder)
+        (at [ "fields", "task_name" ] singleElementArrayDecoder)
         (at [ "fields", "completed_at" ] Iso8601.decoder)
 
 
-taskIdDecoder : Decoder TaskID
-taskIdDecoder =
+singleElementArrayDecoder : Decoder TaskID
+singleElementArrayDecoder =
     list string
         |> andThen
-            (\ids ->
-                case ids of
-                    id :: [] ->
-                        succeed id
+            (\elements ->
+                case elements of
+                    element :: [] ->
+                        succeed element
 
                     _ ->
-                        fail "Expected exactly one task"
+                        fail "Expected exactly one element"
             )
 
 

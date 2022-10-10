@@ -1,4 +1,4 @@
-module TodoList exposing (Completion, Frequency(..), TaskDefinition, TaskID, TimeAgo(..), TodoItem, TodoStatus(..), User, fromTasksAndCompletions)
+module TodoList exposing (Completion, Frequency(..), TaskDefinition, TaskID, TimeAgo(..), TodoItem, TodoStatus(..), User, fromTasksAndCompletions, timeAgo)
 
 import Time exposing (Posix, Weekday(..), Zone, millisToPosix, posixToMillis, toHour, toMillis, toMinute, toSecond)
 
@@ -39,6 +39,7 @@ type alias Completion =
     { id : CompletionID
     , user : User
     , taskId : String
+    , taskName : String
     , completedAt : Posix
     }
 
