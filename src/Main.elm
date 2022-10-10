@@ -538,24 +538,28 @@ viewTimeAgo timeAgo_ short =
         DaysAgo days ->
             if short then
                 String.fromInt days ++ " jours"
+
             else
                 "il y a " ++ String.fromInt days ++ " jours"
 
         WeeksAgo 1 ->
             if short then
-              "-1semaine"
+                "-1semaine"
+
             else
-              "la semaine dernière"
+                "la semaine dernière"
 
         WeeksAgo weeks ->
             if short then
                 String.fromInt weeks ++ " semaines"
+
             else
                 "il y a " ++ String.fromInt weeks ++ " semaines"
 
         LongAgo ->
             if short then
                 "+ d'un mois"
+
             else
                 "il y a plus d'un mois"
 
@@ -643,11 +647,14 @@ frequencyToClass frequency =
 viewHistory : ( Posix, Zone ) -> List Completion -> Html msg
 viewHistory now completions =
     div
-        [ class "history" ]
-        [ h2 [] [ text "Historique" ]
-        , table []
-            [ tbody []
-                (List.map (viewCompletion now) completions)
+        [ class "history-container" ]
+        [ div
+            [ class "history" ]
+            [ h2 [] [ text "Historique" ]
+            , table []
+                [ tbody []
+                    (List.map (viewCompletion now) completions)
+                ]
             ]
         ]
 
