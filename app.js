@@ -43,7 +43,7 @@ customElements.define("gsap-flip", class extends HTMLElement {
       case "run":
         Flip.from(this._flipState, {
           targets: "[data-flip-id]",
-          duration: 0.4,
+          duration: 0.5,
           absolute: true,
           ease: "power2.inOut",
           toggleClass: "flipping",
