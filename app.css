@@ -78,6 +78,10 @@ label + input:not([type=checkbox]) {
   align-items: center;
 }
 
+.todo[data-flip-id=t].flipping .tag {
+  display: none;
+}
+
 .tag {
   font-size: var(--font-size-0);
   background: var(--pink-1);

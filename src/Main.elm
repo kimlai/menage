@@ -9,7 +9,7 @@ import Iso8601
 import Json.Decode exposing (Decoder, andThen, at, fail, field, list, map2, map3, map5, string, succeed)
 import Json.Encode as Encode
 import ListExtra
-import RemoteData exposing (RemoteData(..))
+import RemoteData exposing (RemoteData(..), withDefault)
 import Task
 import Time exposing (Posix, Weekday(..), Zone, posixToMillis)
 import TodoList exposing (..)
@@ -59,6 +59,7 @@ type alias Model =
     , user : User
     , now : ( Posix, Zone )
     , toasts : List Toast
+    , flipTarget : Maybe TodoItem
     }
 
 
@@ -97,6 +98,7 @@ initialModel user now ( tasks, completions ) =
     , user = user
     , now = now
     , toasts = []
+    , flipTarget = Nothing
     }
 
 
@@ -134,7 +136,10 @@ toastFromHttpError error =
 type Msg
     = GotTasksAndCompletions (RemoteData ( List TaskDefinition, List Completion ))
     | GotCurrentTime ( Posix, Zone )
-    | TodoChecked TodoItem Bool
+    | TodoCheckedStartAnimation TodoItem Bool
+    | TodoCheckedRunAnimation String
+    | TodoCheckAnimationDone String
+    | TodoChecked TodoItem
     | MarkTodoAsDone TodoItem Posix
     | CompletionSaved Completion (RemoteData Completion)
     | CompletionDeleted Completion (RemoteData String)
@@ -288,18 +293,38 @@ updateSuccess msg model =
             , Cmd.none
             )
 
-        TodoChecked todoItem _ ->
+        TodoCheckedStartAnimation todoItem _ ->
+            ( { model | flipTarget = Just todoItem }
+            , flipSaveState (Encode.encode 2 (todoItemEncoder todoItem))
+              -- , Cmd.none
+            )
+
+        TodoCheckedRunAnimation _ ->
+            case model.flipTarget of
+                Just todoItem ->
+                    updateSuccess (TodoChecked todoItem) model
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        TodoCheckAnimationDone _ ->
+            ( { model | flipTarget = Nothing }
+            , Cmd.none
+            )
+
+        TodoChecked todoItem ->
             case todoItem.status of
                 NotDone ->
                     ( model
-                    , Task.perform (MarkTodoAsDone todoItem) Time.now
+                    , Cmd.batch [ Task.perform (MarkTodoAsDone todoItem) Time.now ]
                     )
 
                 Done _ _ completion ->
                     ( { model
                         | completions = List.filter (\c -> c /= completion) model.completions
+                        , flipTarget = Just { todoItem | status = NotDone }
                       }
-                    , deleteCompletion completion
+                    , Cmd.batch [ deleteCompletion completion, flipPlay () ]
                     )
 
         MarkTodoAsDone todo now ->
@@ -309,8 +334,9 @@ updateSuccess msg model =
             in
             ( { model
                 | completions = completion :: model.completions
+                , flipTarget = Just { todo | status = Done model.user (timeAgo now model.now) completion }
               }
-            , postCompletion completion
+            , Cmd.batch [ postCompletion completion, flipPlay () ]
             )
 
         GotTasksAndCompletions (Success ( tasks, completions )) ->
@@ -341,7 +367,11 @@ updateSuccess msg model =
 
 subscriptions : TopModel -> Sub Msg
 subscriptions _ =
-    Time.every (1000 * 60) Refresh
+    Sub.batch
+        [ Time.every (1000 * 60) Refresh
+        , flipStateSaved TodoCheckedRunAnimation
+        , flipDone TodoCheckAnimationDone
+        ]
 
 
 
@@ -397,8 +427,8 @@ viewSuccess model =
     in
     [ div
         [ class "todolists-container" ]
-        [ viewTodoListNotDone 0 (ListExtra.uniqueWithCount notDone)
-        , viewTodoListDone 1 (sortByCompletedAtDesc done)
+        [ viewTodoListNotDone model.flipTarget 0 (ListExtra.uniqueWithCount notDone)
+        , viewTodoListDone model.flipTarget 1 (sortByCompletedAtDesc done)
         ]
     , viewHistory model.now (model.completions |> List.sortBy (.completedAt >> posixToMillis) |> List.reverse)
     ]
@@ -452,31 +482,51 @@ viewToast index toast =
         ]
 
 
-viewTodoListDone : Int -> List TodoItem -> Html Msg
-viewTodoListDone i todoList_ =
-    todoList_
-        |> List.indexedMap (\j todolist -> viewTodoDone (String.fromInt i ++ String.fromInt j) todolist)
+viewTodoListDone : Maybe TodoItem -> Int -> List TodoItem -> Html Msg
+viewTodoListDone flipTarget i todoList =
+    todoList
+        |> List.foldl
+            (\todoItem ( currentID, result ) ->
+                if Just todoItem == flipTarget then
+                    ( currentID, result ++ [ ( "t", todoItem ) ] )
+
+                else
+                    ( currentID + 1, result ++ [ ( "done-" ++ String.fromInt currentID, todoItem ) ] )
+            )
+            ( 0, [] )
+        |> Tuple.second
+        |> List.indexedMap (\j todoItem -> viewTodoDone (String.fromInt i ++ String.fromInt j) todoItem)
         |> ul [ attribute "role" "list" ]
 
 
-viewTodoListNotDone : Int -> List ( TodoItem, Int ) -> Html Msg
-viewTodoListNotDone i todoList_ =
-    todoList_
-        |> List.indexedMap (\j todolist -> viewTodoNotDone (String.fromInt i ++ String.fromInt j) todolist)
+viewTodoListNotDone : Maybe TodoItem -> Int -> List ( TodoItem, Int ) -> Html Msg
+viewTodoListNotDone flipTarget i todoList =
+    todoList
+        |> List.foldl
+            (\( todoItem, count ) ( currentID, result ) ->
+                if Just todoItem == flipTarget then
+                    ( currentID + min 2 count - 1, result ++ [ ( "t", ( todoItem, count ) ) ] )
+
+                else
+                    ( currentID + 1, result ++ [ ( "not-done-" ++ String.fromInt currentID, ( todoItem, count ) ) ] )
+            )
+            ( 0, [] )
+        |> Tuple.second
+        |> List.indexedMap (\j todoItem -> viewTodoNotDone (String.fromInt i ++ String.fromInt j) todoItem)
         |> ul [ attribute "role" "list" ]
 
 
-viewTodoDone : String -> TodoItem -> Html Msg
-viewTodoDone index todoItem =
+viewTodoDone : String -> ( String, TodoItem ) -> Html Msg
+viewTodoDone index ( flipID, todoItem ) =
     let
         id_ =
             todoItem.task.name ++ index
     in
     li
-        [ class "todo" ]
+        [ class "todo", attribute "data-flip-id" flipID ]
         [ div
             []
-            [ input [ type_ "checkbox", checked True, id id_, onCheck (TodoChecked todoItem) ] [] ]
+            [ input [ type_ "checkbox", checked True, id id_, onCheck (TodoCheckedStartAnimation todoItem) ] [] ]
         , div
             []
             [ label [ for id_ ] [ text todoItem.task.name ]
@@ -496,17 +546,17 @@ viewTodoDone index todoItem =
         ]
 
 
-viewTodoNotDone : String -> ( TodoItem, Int ) -> Html Msg
-viewTodoNotDone index ( todoItem, count ) =
+viewTodoNotDone : String -> ( String, ( TodoItem, Int ) ) -> Html Msg
+viewTodoNotDone index ( flipID, ( todoItem, count ) ) =
     let
         id_ =
             todoItem.task.name ++ index
     in
     li
-        [ class "todo" ]
+        [ class "todo", attribute "data-flip-id" flipID ]
         [ div
             []
-            [ input [ type_ "checkbox", checked False, id id_, onCheck (TodoChecked todoItem) ] [] ]
+            [ input [ type_ "checkbox", checked False, id id_, onCheck (TodoCheckedStartAnimation todoItem) ] [] ]
         , div
             []
             [ label [ for id_ ] [ text todoItem.task.name ]
@@ -793,8 +843,95 @@ singleElementArrayDecoder =
             )
 
 
+todoItemEncoder : TodoItem -> Encode.Value
+todoItemEncoder todoItem =
+    Encode.object
+        [ ( "task", taskDefinitionEncoder todoItem.task )
+        , ( "status", todoStatusEncoder todoItem.status )
+        ]
+
+
+taskDefinitionEncoder : TaskDefinition -> Encode.Value
+taskDefinitionEncoder taskDefinition =
+    Encode.object
+        [ ( "id", Encode.string taskDefinition.id )
+        , ( "name", Encode.string taskDefinition.name )
+        , ( "frequency", frequencyEncoder taskDefinition.frequency )
+        ]
+
+
+frequencyEncoder : Frequency -> Encode.Value
+frequencyEncoder frequency =
+    case frequency of
+        TwiceADay ->
+            Encode.string "twice a day"
+
+        FourTimesAWeek ->
+            Encode.string "four times a week"
+
+        TwiceAWeek ->
+            Encode.string "twice a week"
+
+        EveryWeek ->
+            Encode.string "every week"
+
+        EveryOtherWeek ->
+            Encode.string "every other week"
+
+        EveryMonth ->
+            Encode.string "every month"
+
+
+todoStatusEncoder : TodoStatus -> Encode.Value
+todoStatusEncoder todoStatus =
+    case todoStatus of
+        NotDone ->
+            Encode.object
+                [ ( "type", Encode.string "not done" ) ]
+
+        Done user timeAgo completion ->
+            Encode.object
+                [ ( "type", Encode.string "done" )
+                , ( "user", Encode.string user )
+                , ( "completion", completionEncoder completion )
+                , ( "timeAgo", timeAgoEncoder timeAgo )
+                ]
+
+
+timeAgoEncoder : TimeAgo -> Encode.Value
+timeAgoEncoder timeAgo =
+    case timeAgo of
+        DaysAgo days ->
+            Encode.object
+                [ ( "type", Encode.string "days ago" )
+                , ( "days", Encode.string (String.fromInt days) )
+                ]
+
+        WeeksAgo weeks ->
+            Encode.object
+                [ ( "type", Encode.string "weeks ago" )
+                , ( "weeks", Encode.string (String.fromInt weeks) )
+                ]
+
+        LongAgo ->
+            Encode.object
+                [ ( "type", Encode.string "long ago" ) ]
+
+
 
 -- Ports
 
 
 port setStorage : String -> Cmd msg
+
+
+port flipSaveState : String -> Cmd msg
+
+
+port flipStateSaved : (String -> msg) -> Sub msg
+
+
+port flipDone : (String -> msg) -> Sub msg
+
+
+port flipPlay : () -> Cmd msg

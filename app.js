@@ -1,4 +1,8 @@
 import { Elm } from "./src/Main.elm";
+import { gsap } from "gsap";
+import { Flip } from "gsap/Flip";
+
+gsap.registerPlugin(Flip);
 
 // Extract the stored data from previous sessions.
 var storedData = localStorage.getItem('menage-data');
@@ -14,6 +18,27 @@ var app = Elm.Main.init({
 // Turn the data to a string and put it in localStorage.
 app.ports.setStorage.subscribe(function(state) {
   localStorage.setItem('menage-data', JSON.stringify(state));
+});
+
+let state;
+app.ports.flipSaveState.subscribe(function(todoItem) {
+  requestAnimationFrame(() => {
+    state = Flip.getState("[data-flip-id]");
+    app.ports.flipStateSaved.send(todoItem);
+  });
+});
+
+app.ports.flipPlay.subscribe(function() {
+  requestAnimationFrame(() => {
+    Flip.from(state, {
+      targets: "[data-flip-id]",
+      duration: 0.4,
+      absolute: true,
+      ease: "power2.inOut",
+      toggleClass: "flipping",
+      onComplete: () => app.ports.flipDone.send("done")
+    });
+  });
 });
 
 if ('serviceWorker' in navigator) {
