@@ -20,26 +20,60 @@ app.ports.setStorage.subscribe(function(state) {
   localStorage.setItem('menage-data', JSON.stringify(state));
 });
 
-let state;
-app.ports.flipSaveState.subscribe(function(todoItem) {
-  requestAnimationFrame(() => {
-    state = Flip.getState("[data-flip-id]");
-    app.ports.flipStateSaved.send(todoItem);
-  });
+customElements.define("gsap-flip", class extends HTMLElement {
+  constructor() {
+    super();
+    this._state = "toto";
+    this._flipsState = null;
+  }
+
+  set status(value) {
+    console.log("set state", value);
+    switch (value) {
+      case "inert":
+        this._flipsState = null;
+        break;
+      case "saveState":
+        requestAnimationFrame(() => {
+          this._flipState = Flip.getState("[data-flip-id]");
+          console.log("dispatching event state saved");
+          this.dispatchEvent(new CustomEvent('flip-state-saved'));
+        });
+        break;
+      case "run":
+        Flip.from(this._flipState, {
+          targets: "[data-flip-id]",
+          duration: 0.4,
+          absolute: true,
+          ease: "power2.inOut",
+          toggleClass: "flipping",
+          onComplete: () => this.dispatchEvent(new CustomEvent('flip-done'))
+        });
+        break;
+    }
+  }
 });
 
-app.ports.flipPlay.subscribe(function() {
-  requestAnimationFrame(() => {
-    Flip.from(state, {
-      targets: "[data-flip-id]",
-      duration: 0.4,
-      absolute: true,
-      ease: "power2.inOut",
-      toggleClass: "flipping",
-      onComplete: () => app.ports.flipDone.send("done")
-    });
-  });
-});
+// let state;
+// app.ports.flipSaveState.subscribe(function(todoItem) {
+//   requestAnimationFrame(() => {
+//     state = Flip.getState("[data-flip-id]");
+//     app.ports.flipStateSaved.send(todoItem);
+//   });
+// });
+//
+// app.ports.flipPlay.subscribe(function() {
+//   requestAnimationFrame(() => {
+//     Flip.from(state, {
+//       targets: "[data-flip-id]",
+//       duration: 0.4,
+//       absolute: true,
+//       ease: "power2.inOut",
+//       toggleClass: "flipping",
+//       onComplete: () => app.ports.flipDone.send("done")
+//     });
+//   });
+// });
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(new URL('service-worker.js', import.meta.url), { type: 'module' });

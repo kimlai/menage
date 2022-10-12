@@ -2,7 +2,7 @@ port module Main exposing (..)
 
 import Browser
 import Html exposing (Html, button, div, form, h2, input, label, li, main_, output, span, table, tbody, td, text, tr, ul)
-import Html.Attributes exposing (attribute, checked, class, for, id, name, required, type_)
+import Html.Attributes exposing (attribute, checked, class, for, id, name, property, required, type_)
 import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
 import Http exposing (Error(..))
 import Iso8601
@@ -60,7 +60,14 @@ type alias Model =
     , now : ( Posix, Zone )
     , toasts : List Toast
     , flipTarget : Maybe TodoItem
+    , flipState : FlipState
     }
+
+
+type FlipState
+    = Inert
+    | SaveState
+    | Run
 
 
 type alias Toast =
@@ -99,6 +106,7 @@ initialModel user now ( tasks, completions ) =
     , now = now
     , toasts = []
     , flipTarget = Nothing
+    , flipState = Inert
     }
 
 
@@ -137,8 +145,8 @@ type Msg
     = GotTasksAndCompletions (RemoteData ( List TaskDefinition, List Completion ))
     | GotCurrentTime ( Posix, Zone )
     | TodoCheckedStartAnimation TodoItem Bool
-    | TodoCheckedRunAnimation String
-    | TodoCheckAnimationDone String
+    | TodoCheckAnimationDone
+    | TodoCheckedFlipStateSaved
     | TodoChecked TodoItem
     | MarkTodoAsDone TodoItem Posix
     | CompletionSaved Completion (RemoteData Completion)
@@ -294,21 +302,20 @@ updateSuccess msg model =
             )
 
         TodoCheckedStartAnimation todoItem _ ->
-            ( { model | flipTarget = Just todoItem }
-            , flipSaveState (Encode.encode 2 (todoItemEncoder todoItem))
-              -- , Cmd.none
+            ( { model | flipTarget = Just todoItem, flipState = SaveState }
+              , Cmd.none
             )
 
-        TodoCheckedRunAnimation _ ->
+        TodoCheckedFlipStateSaved ->
             case model.flipTarget of
                 Just todoItem ->
-                    updateSuccess (TodoChecked todoItem) model
+                    updateSuccess (TodoChecked todoItem) { model | flipState = Run }
 
                 Nothing ->
                     ( model, Cmd.none )
 
-        TodoCheckAnimationDone _ ->
-            ( { model | flipTarget = Nothing }
+        TodoCheckAnimationDone ->
+            ( { model | flipTarget = Nothing, flipState = Inert }
             , Cmd.none
             )
 
@@ -324,7 +331,7 @@ updateSuccess msg model =
                         | completions = List.filter (\c -> c /= completion) model.completions
                         , flipTarget = Just { todoItem | status = NotDone }
                       }
-                    , Cmd.batch [ deleteCompletion completion, flipPlay () ]
+                    , deleteCompletion completion
                     )
 
         MarkTodoAsDone todo now ->
@@ -336,7 +343,7 @@ updateSuccess msg model =
                 | completions = completion :: model.completions
                 , flipTarget = Just { todo | status = Done model.user (timeAgo now model.now) completion }
               }
-            , Cmd.batch [ postCompletion completion, flipPlay () ]
+            , postCompletion completion
             )
 
         GotTasksAndCompletions (Success ( tasks, completions )) ->
@@ -367,11 +374,7 @@ updateSuccess msg model =
 
 subscriptions : TopModel -> Sub Msg
 subscriptions _ =
-    Sub.batch
-        [ Time.every (1000 * 60) Refresh
-        , flipStateSaved TodoCheckedRunAnimation
-        , flipDone TodoCheckAnimationDone
-        ]
+    Time.every (1000 * 60) Refresh
 
 
 
@@ -424,6 +427,17 @@ viewSuccess model =
                         ( Done _ _ _, NotDone ) ->
                             GT
                 )
+
+        flipState =
+            case model.flipState of
+                Inert ->
+                    "inert"
+
+                SaveState ->
+                    "saveState"
+
+                Run ->
+                    "run"
     in
     [ div
         [ class "todolists-container" ]
@@ -431,6 +445,12 @@ viewSuccess model =
         , viewTodoListDone model.flipTarget 1 (sortByCompletedAtDesc done)
         ]
     , viewHistory model.now (model.completions |> List.sortBy (.completedAt >> posixToMillis) |> List.reverse)
+    , Html.node "gsap-flip"
+        [ property "status" (Encode.string flipState)
+        , Html.Events.on "flip-state-saved" (Json.Decode.succeed TodoCheckedFlipStateSaved)
+        , Html.Events.on "flip-done" (Json.Decode.succeed TodoCheckAnimationDone)
+        ]
+        []
     ]
 
 
@@ -923,15 +943,3 @@ timeAgoEncoder timeAgo =
 
 
 port setStorage : String -> Cmd msg
-
-
-port flipSaveState : String -> Cmd msg
-
-
-port flipStateSaved : (String -> msg) -> Sub msg
-
-
-port flipDone : (String -> msg) -> Sub msg
-
-
-port flipPlay : () -> Cmd msg
