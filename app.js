@@ -34,9 +34,26 @@ customElements.define("gsap-flip", class extends HTMLElement {
         this._flipsState = null;
         break;
       case "saveState":
+        // create a "ghost" element to be animated while the original one is removed from the DOM by Elm,
+        // making it possible to run the FLIP animation at the same time.
+        const element = document.querySelector("[data-animate]");
+        if (element) {
+          const boundingRect = element.getBoundingClientRect();
+          const ghost = element.cloneNode(true);
+          ghost.removeAttribute("data-flip-id");
+          ghost.style.position = "absolute";
+          ghost.style.top = `${boundingRect.top}px`;
+          ghost.style.left = `${boundingRect.left}px`;
+          ghost.style.width = `${boundingRect.width}px`;
+          ghost.querySelector("label").style.letterSpacing = "1px"; // no idea why this is needed but it is
+          ghost.addEventListener("animationend", () => {
+            document.body.removeChild(ghost);
+          });
+          document.body.appendChild(ghost);
+        }
+
         requestAnimationFrame(() => {
           this._flipState = Flip.getState("[data-flip-id]");
-          console.log("dispatching event state saved");
           this.dispatchEvent(new CustomEvent('flip-state-saved'));
         });
         break;
@@ -45,8 +62,7 @@ customElements.define("gsap-flip", class extends HTMLElement {
           targets: "[data-flip-id]",
           duration: 0.5,
           absolute: true,
-          ease: "power2.inOut",
-          toggleClass: "flipping",
+          ease: "power4.inOut",
           onComplete: () => this.dispatchEvent(new CustomEvent('flip-done'))
         });
         break;

@@ -525,10 +525,10 @@ viewTodoListNotDone flipTarget i todoList =
         |> List.foldl
             (\( todoItem, count ) ( currentID, result ) ->
                 if Just todoItem == flipTarget then
-                    ( currentID + min 2 count - 1, result ++ [ ( "not-done-t", ( todoItem, count ) ) ] )
+                    ( currentID + min 2 count - 1, result ++ [ ( "not-done-t", ( todoItem, count, True ) ) ] )
 
                 else
-                    ( currentID + 1, result ++ [ ( "not-done-" ++ String.fromInt currentID, ( todoItem, count ) ) ] )
+                    ( currentID + 1, result ++ [ ( "not-done-" ++ String.fromInt currentID, ( todoItem, count, False ) ) ] )
             )
             ( 0, [] )
         |> Tuple.second
@@ -567,17 +567,24 @@ viewTodoDone index ( flipID, todoItem ) =
         ]
 
 
-viewTodoNotDone : String -> ( String, ( TodoItem, Int ) ) -> Html Msg
-viewTodoNotDone index ( flipID, ( todoItem, count ) ) =
+viewTodoNotDone : String -> ( String, ( TodoItem, Int, Bool ) ) -> Html Msg
+viewTodoNotDone index ( flipID, ( todoItem, count, isAnimating ) ) =
     let
         id_ =
             todoItem.task.name ++ index
+
+        animationAttrs =
+            if isAnimating then
+                [ attribute "data-animate" "true" ]
+
+            else
+                []
     in
     li
-        [ class "todo", attribute "data-flip-id" flipID ]
+        ([ class "todo", attribute "data-flip-id" flipID ] ++ animationAttrs)
         [ div
             []
-            [ input [ type_ "checkbox", checked False, id id_, onCheck (TodoCheckedStartAnimation todoItem) ] [] ]
+            [ input [ type_ "checkbox", checked isAnimating, id id_, onCheck (TodoCheckedStartAnimation todoItem) ] [] ]
         , div
             []
             [ label [ for id_ ] [ text todoItem.task.name ]

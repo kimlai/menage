@@ -71,6 +71,25 @@ label + input:not([type=checkbox]) {
   align-items: baseline;
 }
 
+/* the actual element being animated will be put outside of Elm's root so that the FLIP animation
+ * can be run at the same time */
+main .todo[data-animate=true] {
+  opacity: 0;
+}
+
+.todo[data-animate=true] {
+  animation: var(--animation-slide-out-up), var(--animation-fade-out) forwards;
+  animation-timing-function: var(--easing-squish-5);
+  animation-iteration-count: 1;
+  animation-duration: 500ms;
+}
+
+.todo[data-animate=true] input[type=checkbox]{
+  animation: var(--animation-ping);
+  animation-duration: 500ms;
+  animation-iteration-count: 1;
+}
+
 .todo > :nth-child(2) {
   display: flex;
   flex-wrap: wrap;
