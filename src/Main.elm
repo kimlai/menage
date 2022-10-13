@@ -303,7 +303,7 @@ updateSuccess msg model =
 
         TodoCheckedStartAnimation todoItem _ ->
             ( { model | flipTarget = Just todoItem, flipState = SaveState }
-              , Cmd.none
+            , Cmd.none
             )
 
         TodoCheckedFlipStateSaved ->
@@ -508,7 +508,7 @@ viewTodoListDone flipTarget i todoList =
         |> List.foldl
             (\todoItem ( currentID, result ) ->
                 if Just todoItem == flipTarget then
-                    ( currentID, result ++ [ ( "t", todoItem ) ] )
+                    ( currentID, result ++ [ ( "done-t", todoItem ) ] )
 
                 else
                     ( currentID + 1, result ++ [ ( "done-" ++ String.fromInt currentID, todoItem ) ] )
@@ -525,7 +525,7 @@ viewTodoListNotDone flipTarget i todoList =
         |> List.foldl
             (\( todoItem, count ) ( currentID, result ) ->
                 if Just todoItem == flipTarget then
-                    ( currentID + min 2 count - 1, result ++ [ ( "t", ( todoItem, count ) ) ] )
+                    ( currentID + min 2 count - 1, result ++ [ ( "not-done-t", ( todoItem, count ) ) ] )
 
                 else
                     ( currentID + 1, result ++ [ ( "not-done-" ++ String.fromInt currentID, ( todoItem, count ) ) ] )
@@ -558,6 +558,7 @@ viewTodoDone index ( flipID, todoItem ) =
                         , div [ class "tag time-ago" ] [ text (viewTimeAgo timeAgo_ False) ]
                         ]
 
+                -- impossible, probably can be refactored out
                 NotDone ->
                     div
                         [ class ("tag " ++ frequencyToClass todoItem.task.frequency) ]
@@ -581,6 +582,7 @@ viewTodoNotDone index ( flipID, ( todoItem, count ) ) =
             []
             [ label [ for id_ ] [ text todoItem.task.name ]
             , case todoItem.status of
+                -- impossible, probably can be refactored out
                 Done user timeAgo_ _ ->
                     div
                         [ class "completion-tags" ]
@@ -717,7 +719,7 @@ frequencyToClass frequency =
 viewHistory : ( Posix, Zone ) -> List Completion -> Html msg
 viewHistory now completions =
     div
-        [ class "history-container" ]
+        [ class "history-container", attribute "data-flip-id" "history-container" ]
         [ div
             [ class "history" ]
             [ h2 [] [ text "Historique" ]
