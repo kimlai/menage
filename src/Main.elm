@@ -616,7 +616,7 @@ viewTimeAgo timeAgo_ short =
 
         WeeksAgo 1 ->
             if short then
-                "-1semaine"
+                "1 semaine"
 
             else
                 "la semaine dernière"
