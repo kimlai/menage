@@ -4,8 +4,10 @@ import { Flip } from "gsap/Flip";
 
 gsap.registerPlugin(Flip);
 
+const LOCAL_STORAGE_KEY = "menage-data-v0";
+
 // Extract the stored data from previous sessions.
-var storedData = localStorage.getItem('menage-data');
+var storedData = localStorage.getItem(LOCAL_STORAGE_KEY);
 var flags = storedData ? JSON.parse(storedData) : null;
 
 // Load the Elm app, passing in the stored data.
@@ -17,7 +19,7 @@ var app = Elm.Main.init({
 // Listen for commands from the `setStorage` port.
 // Turn the data to a string and put it in localStorage.
 app.ports.setStorage.subscribe(function(state) {
-  localStorage.setItem('menage-data', JSON.stringify(state));
+  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state));
 });
 
 customElements.define("gsap-flip", class extends HTMLElement {
