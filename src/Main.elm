@@ -9,7 +9,7 @@ import Iso8601
 import Json.Decode exposing (Decoder, andThen, at, fail, field, list, map2, map3, map5, string, succeed)
 import Json.Encode as Encode
 import ListExtra
-import RemoteData exposing (RemoteData(..), withDefault)
+import RemoteData exposing (RemoteData(..))
 import Task
 import Time exposing (Posix, Weekday(..), Zone, posixToMillis)
 import TodoList exposing (..)
@@ -61,6 +61,7 @@ type alias Model =
     , toasts : List Toast
     , flipTarget : Maybe TodoItem
     , flipState : FlipState
+    , congratsMessage : Maybe String
     }
 
 
@@ -107,6 +108,7 @@ initialModel user now ( tasks, completions ) =
     , toasts = []
     , flipTarget = Nothing
     , flipState = Inert
+    , congratsMessage = Nothing
     }
 
 
@@ -155,6 +157,8 @@ type Msg
     | SaveUsername
     | Refresh Posix
     | RemoveToast Int
+    | RemoveCongratsMessage
+    | NoOp
 
 
 update : Msg -> TopModel -> ( TopModel, Cmd Msg )
@@ -257,6 +261,11 @@ updateSuccess msg model =
             , Cmd.none
             )
 
+        RemoveCongratsMessage ->
+            ( { model | congratsMessage = Nothing }
+            , Cmd.none
+            )
+
         CompletionSaved oldCompletion (Failure err) ->
             ( { model
                 | completions =
@@ -301,8 +310,16 @@ updateSuccess msg model =
             , Cmd.none
             )
 
-        TodoCheckedStartAnimation todoItem _ ->
-            ( { model | flipTarget = Just todoItem, flipState = SaveState }
+        TodoCheckedStartAnimation todoItem checked ->
+            let
+                newModel =
+                    if checked then
+                        { model | congratsMessage = Just "👏 Bravo !" }
+
+                    else
+                        model
+            in
+            ( { newModel | flipTarget = Just todoItem, flipState = SaveState }
             , Cmd.none
             )
 
@@ -367,6 +384,9 @@ updateSuccess msg model =
         SaveUsername ->
             ( model, Cmd.none )
 
+        NoOp ->
+            ( model, Cmd.none )
+
 
 
 -- Subscriptions
@@ -398,6 +418,7 @@ view topModel =
                 []
                 [ main_ [] (viewSuccess model)
                 , viewToasts model.toasts
+                , viewCongratsMessage model.congratsMessage
                 ]
 
 
@@ -746,6 +767,33 @@ viewCompletion now completion =
         , td [] [ span [ class "tag time-ago" ] [ text (viewTimeAgo (TodoList.timeAgo completion.completedAt now) True) ] ]
         , td [] [ span [ class "tag user" ] [ text completion.user ] ]
         ]
+
+
+viewCongratsMessage : Maybe String -> Html Msg
+viewCongratsMessage maybeMessage =
+    case maybeMessage of
+        Just message ->
+            output
+                [ class "congrats-message-container"
+                , Html.Events.on "animationend"
+                    (field "animationName" string
+                        |> Json.Decode.map
+                            (\name ->
+                                if name == "fade-out" then
+                                    RemoveCongratsMessage
+
+                                else
+                                    NoOp
+                            )
+                    )
+                ]
+                [ div
+                    [ class "congrats-message" ]
+                    [ text message ]
+                ]
+
+        Nothing ->
+            text ""
 
 
 

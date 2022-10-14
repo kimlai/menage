@@ -213,6 +213,7 @@ td + td {
   padding: var(--size-1) var(--size-3);
   box-shadow: var(--shadow-6);
   max-inline-size: min(80ch, 90vw);
+  opacity: 0;
   animation: var(--animation-fade-in), var(--animation-slide-in-up);
   animation-timing-function: var(--ease-4);
   animation-duration: 300ms;
@@ -231,4 +232,28 @@ td + td {
 
 .toast .message {
   font-size: var(--font-size-0);
+}
+
+.congrats-message-container {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.congrats-message {
+  font-size: var(--font-size-4);
+  background: var(--teal-9);
+  color: white;
+  padding: var(--size-3) var(--size-7);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-6);
+  white-space: nowrap;
+  opacity: 0;
+  animation:
+    var(--animation-fade-in) forwards,
+    spin 1s var(--ease-squish-5),
+    1s 0.5s float forwards,
+    1s 1.5s fade-out forwards,
+    1s 1.5s ping forwards;
 }

@@ -30,7 +30,6 @@ customElements.define("gsap-flip", class extends HTMLElement {
   }
 
   set status(value) {
-    console.log("set state", value);
     switch (value) {
       case "inert":
         this._flipsState = null;
@@ -48,8 +47,10 @@ customElements.define("gsap-flip", class extends HTMLElement {
           ghost.style.left = `${boundingRect.left}px`;
           ghost.style.width = `${boundingRect.width}px`;
           ghost.querySelector("label").style.letterSpacing = "1px"; // no idea why this is needed but it is
-          ghost.addEventListener("animationend", () => {
-            document.body.removeChild(ghost);
+          ghost.addEventListener("animationend", event => {
+            if (event.animationName == "fade-out") {
+              document.body.removeChild(ghost);
+            }
           });
           document.body.appendChild(ghost);
         }
@@ -105,7 +106,6 @@ function askForNotificationPermission() {
     });
 
     if (permissionResult) {
-      console.log("coucou");
       permissionResult.then(resolve, reject);
     }
   }).then(function(permissionResult) {
