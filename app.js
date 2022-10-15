@@ -43,9 +43,9 @@ customElements.define("gsap-flip", class extends HTMLElement {
           const ghost = element.cloneNode(true);
           ghost.removeAttribute("data-flip-id");
           ghost.style.position = "absolute";
-          ghost.style.top = `${boundingRect.top}px`;
-          ghost.style.left = `${boundingRect.left}px`;
-          ghost.style.width = `${boundingRect.width}px`;
+          ghost.style.top = `${Math.floor(boundingRect.top)}px`;
+          ghost.style.left = `${Math.floor(boundingRect.left)}px`;
+          ghost.style.width = `${Math.ceil(boundingRect.width) + 1}px`; // +1px to prevent unwanted flexbox wrapping
           ghost.querySelector("label").style.letterSpacing = "1px"; // no idea why this is needed but it is
           ghost.addEventListener("animationend", event => {
             if (event.animationName == "fade-out") {
