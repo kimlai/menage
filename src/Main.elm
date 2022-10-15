@@ -1,5 +1,6 @@
 port module Main exposing (..)
 
+import Array
 import Browser
 import Html exposing (Html, button, div, form, h2, input, label, li, main_, output, span, table, tbody, td, text, tr, ul)
 import Html.Attributes exposing (attribute, checked, class, for, id, name, property, required, type_)
@@ -9,6 +10,7 @@ import Iso8601
 import Json.Decode exposing (Decoder, andThen, at, fail, field, list, map2, map3, map5, string, succeed)
 import Json.Encode as Encode
 import ListExtra
+import Random
 import RemoteData exposing (RemoteData(..))
 import Task
 import Time exposing (Posix, Weekday(..), Zone, posixToMillis)
@@ -75,6 +77,35 @@ type alias Toast =
     { title : String
     , message : String
     }
+
+
+congratsMessages : List String
+congratsMessages =
+    [ "Bravo !"
+    , "Bien ouej !"
+    , "Nice !"
+    ]
+
+
+congratsEmojis : List String
+congratsEmojis =
+    [ "👏"
+    , "🎉"
+    , "💪"
+    , "❤️"
+    ]
+
+
+randomCongratsMessage : Random.Generator String
+randomCongratsMessage =
+    Random.map2
+        (\emoji message ->
+            (congratsEmojis |> Array.fromList |> Array.get emoji |> Maybe.withDefault "👏")
+                ++ " "
+                ++ (congratsMessages |> Array.fromList |> Array.get message |> Maybe.withDefault "Bravo !")
+        )
+        (Random.int 0 (List.length congratsEmojis - 1))
+        (Random.int 0 (List.length congratsMessages - 1))
 
 
 init : Maybe String -> ( TopModel, Cmd Msg )
@@ -146,6 +177,7 @@ toastFromHttpError error =
 type Msg
     = GotTasksAndCompletions (RemoteData ( List TaskDefinition, List Completion ))
     | GotCurrentTime ( Posix, Zone )
+    | NewCongratsMessage String
     | TodoCheckedStartAnimation TodoItem Bool
     | TodoCheckAnimationDone
     | TodoCheckedFlipStateSaved
@@ -311,15 +343,16 @@ updateSuccess msg model =
             )
 
         TodoCheckedStartAnimation todoItem checked ->
-            let
-                newModel =
-                    if checked then
-                        { model | congratsMessage = Just "👏 Bravo !" }
+            ( { model | flipTarget = Just todoItem, flipState = SaveState }
+            , if checked then
+                Random.generate NewCongratsMessage randomCongratsMessage
 
-                    else
-                        model
-            in
-            ( { newModel | flipTarget = Just todoItem, flipState = SaveState }
+              else
+                Cmd.none
+            )
+
+        NewCongratsMessage message ->
+            ( { model | congratsMessage = Just message }
             , Cmd.none
             )
 
