@@ -6,7 +6,8 @@ html {
   accent-color: var(--teal-6);
 }
 
-body {
+.main-container {
+  min-height: 100vh;
   display: grid;
   place-items: center;
   font-family: var(--font-mono);
@@ -214,7 +215,7 @@ td + td {
   box-shadow: var(--shadow-6);
   max-inline-size: min(80ch, 90vw);
   opacity: 0;
-  animation: var(--animation-fade-in), var(--animation-slide-in-up);
+  animation: var(--animation-fade-in) forwards, var(--animation-slide-in-up);
   animation-timing-function: var(--ease-4);
   animation-duration: 300ms;
 

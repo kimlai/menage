@@ -25,7 +25,6 @@ app.ports.setStorage.subscribe(function(state) {
 customElements.define("gsap-flip", class extends HTMLElement {
   constructor() {
     super();
-    this._state = "toto";
     this._flipsState = null;
   }
 
@@ -72,27 +71,6 @@ customElements.define("gsap-flip", class extends HTMLElement {
     }
   }
 });
-
-// let state;
-// app.ports.flipSaveState.subscribe(function(todoItem) {
-//   requestAnimationFrame(() => {
-//     state = Flip.getState("[data-flip-id]");
-//     app.ports.flipStateSaved.send(todoItem);
-//   });
-// });
-//
-// app.ports.flipPlay.subscribe(function() {
-//   requestAnimationFrame(() => {
-//     Flip.from(state, {
-//       targets: "[data-flip-id]",
-//       duration: 0.4,
-//       absolute: true,
-//       ease: "power2.inOut",
-//       toggleClass: "flipping",
-//       onComplete: () => app.ports.flipDone.send("done")
-//     });
-//   });
-// });
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(new URL('service-worker.js', import.meta.url), { type: 'module' });
@@ -161,17 +139,27 @@ function sendSubscriptionToBackEnd(subscription) {
 }
 
 const initNotifications = () => {
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    return;
-  }
-  const template = document.getElementById('notification-button');
-  const button = template.content.firstElementChild.cloneNode(true);
-  if (Notification.permission === "granted") {
-    button.dataset.active = true;
-  } else {
-    button.addEventListener('click', askForNotificationPermission, { once: true });
-  }
-  document.body.appendChild(button);
 }
 
-initNotifications();
+customElements.define("menage-notifications", class extends HTMLElement {
+  constructor() {
+    super();
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      return;
+    }
+    const template = document.createElement('div');
+    template.innerHTML =
+      `<button class="notification-button" data-active=false>
+        <img alt="notifications inactives" src = "/img/bell-slash.svg" />
+        <img alt="notifications activées" src = "/img/bell.svg" />
+      </button >`;
+    const button = template.firstChild;
+    if (Notification.permission === "granted") {
+      button.dataset.active = true;
+    } else {
+      button.addEventListener('click', askForNotificationPermission, { once: true });
+    }
+    this.appendChild(button);
+  }
+});
+// initNotifications();

@@ -2,6 +2,7 @@ port module Main exposing (..)
 
 import Array
 import Browser
+import Browser.Navigation as Nav
 import Html exposing (Html, button, div, form, h2, input, label, li, main_, output, span, table, tbody, td, text, tr, ul)
 import Html.Attributes exposing (attribute, checked, class, for, id, name, property, required, type_)
 import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
@@ -15,55 +16,85 @@ import RemoteData exposing (RemoteData(..))
 import Task
 import Time exposing (Posix, Weekday(..), Zone, posixToMillis)
 import TodoList exposing (..)
+import TodoListData exposing (..)
+import Url
+import Url.Parser
 
 
 
 -- Main
 
 
-main : Program (Maybe String) TopModel Msg
+main : Program (Maybe String) Model Msg
 main =
-    Browser.element { init = init, update = update, view = view, subscriptions = subscriptions }
+    Browser.application
+        { init = init
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        , onUrlChange = UrlChanged
+        , onUrlRequest = LinkClicked
+        }
 
 
 
 -- Model
 
 
-type TopModel
-    = Login LoginModel
-    | TopLoading LoadingModel
-    | TopSuccess Model
-    | TopFailure FailureModel
+type Page
+    = LoginPage LoginPageModel
+    | TodoListPage TodoListPageModel
+    | HistoryPage
+    | NewTaskPage
+    | NotFoundPage
 
 
-type alias LoginModel =
-    { usernameInputValue : String
-    , maybeNow : Maybe ( Posix, Zone )
-    }
-
-
-type alias LoadingModel =
-    { user : User
-    , maybeNow : Maybe ( Posix, Zone )
-    , maybeTasksAndCompletions : Maybe ( List TaskDefinition, List Completion )
-    }
-
-
-type alias FailureModel =
-    { error : Http.Error
-    }
+pageFromUrl : Url.Url -> Page
+pageFromUrl url =
+    url
+        |> Url.Parser.parse
+            (Url.Parser.oneOf
+                [ Url.Parser.map (TodoListPage initTodoListPageModel) Url.Parser.top
+                , Url.Parser.map (LoginPage initLoginPageModel) (Url.Parser.s "login")
+                , Url.Parser.map HistoryPage (Url.Parser.s "history")
+                , Url.Parser.map NewTaskPage (Url.Parser.s "new-task")
+                ]
+            )
+        |> Maybe.withDefault NotFoundPage
 
 
 type alias Model =
-    { tasks : List TaskDefinition
-    , completions : List Completion
-    , user : User
-    , now : ( Posix, Zone )
+    { key : Nav.Key
+    , maybeUser : Maybe User
     , toasts : List Toast
-    , flipTarget : Maybe TodoItem
+    , todoListData : TodoListData
+    , page : Page
+    }
+
+
+type alias LoginPageModel =
+    { usernameInputValue : String
+    }
+
+
+initLoginPageModel : LoginPageModel
+initLoginPageModel =
+    { usernameInputValue = ""
+    }
+
+
+type alias TodoListPageModel =
+    { flipTarget : Maybe TodoItem
     , flipState : FlipState
     , congratsMessage : Maybe String
+    }
+
+
+initTodoListPageModel : TodoListPageModel
+initTodoListPageModel =
+    { flipTarget = Nothing
+    , flipState = Inert
+    , congratsMessage = Nothing
     }
 
 
@@ -108,39 +139,30 @@ randomCongratsMessage =
         (Random.int 0 (List.length congratsMessages - 1))
 
 
-init : Maybe String -> ( TopModel, Cmd Msg )
-init user =
-    case user of
-        Just name ->
-            ( TopLoading (LoadingModel name Nothing Nothing)
-            , Cmd.batch
-                [ getTasksAndCompletions
-                , getCurrentTime
-                ]
+init : Maybe User -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
+init user url key =
+    let
+        ( model, cmd ) =
+            ( { key = key
+              , maybeUser = user
+              , toasts = []
+              , todoListData = DataLoading Nothing Nothing
+              , page = pageFromUrl url
+              }
+            , Cmd.batch [ getTasksAndCompletions, getCurrentTime ]
             )
+    in
+    case user of
+        Just _ ->
+            ( model, cmd )
 
         Nothing ->
-            ( Login (LoginModel "" Nothing)
-            , getCurrentTime
-            )
+            ( model, Cmd.batch [ cmd, Nav.replaceUrl key "/login" ] )
 
 
 getCurrentTime : Cmd Msg
 getCurrentTime =
     Task.perform GotCurrentTime (Time.now |> Task.andThen (\now -> Task.map (Tuple.pair now) Time.here))
-
-
-initialModel : User -> ( Posix, Zone ) -> ( List TaskDefinition, List Completion ) -> Model
-initialModel user now ( tasks, completions ) =
-    { tasks = tasks
-    , completions = completions
-    , user = user
-    , now = now
-    , toasts = []
-    , flipTarget = Nothing
-    , flipState = Inert
-    , congratsMessage = Nothing
-    }
 
 
 toastFromHttpError : Http.Error -> Toast
@@ -175,292 +197,305 @@ toastFromHttpError error =
 
 
 type Msg
-    = GotTasksAndCompletions (RemoteData ( List TaskDefinition, List Completion ))
+    = UrlChanged Url.Url
+    | LinkClicked Browser.UrlRequest
+    | GotTasksAndCompletions (RemoteData ( List TaskDefinition, List Completion ))
     | GotCurrentTime ( Posix, Zone )
-    | NewCongratsMessage String
+    | RemoveToast Int
+    | TodoListMsg TodoListMsg
+    | LoginMsg LoginMsg
+
+
+type TodoListMsg
+    = NewCongratsMessage String
     | TodoCheckedStartAnimation TodoItem Bool
     | TodoCheckAnimationDone
     | TodoCheckedFlipStateSaved
-    | TodoChecked TodoItem
     | MarkTodoAsDone TodoItem Posix
     | CompletionSaved Completion (RemoteData Completion)
     | CompletionDeleted Completion (RemoteData String)
-    | UsernameInput String
-    | SaveUsername
-    | Refresh Posix
-    | RemoveToast Int
     | RemoveCongratsMessage
-    | NoOp
+    | Refresh Posix
 
 
-update : Msg -> TopModel -> ( TopModel, Cmd Msg )
-update msg topModel =
-    case ( msg, topModel ) of
-        ( GotTasksAndCompletions (Success tasksAndCompletions), TopLoading model ) ->
-            case model.maybeNow of
-                Just now ->
-                    ( TopSuccess (initialModel model.user now tasksAndCompletions)
-                    , Cmd.none
-                    )
+type LoginMsg
+    = UsernameInput String
+    | SaveUsername
 
-                Nothing ->
-                    ( TopLoading { model | maybeTasksAndCompletions = Just tasksAndCompletions }
-                    , Cmd.none
-                    )
 
-        ( GotTasksAndCompletions (Success ( tasks, completions )), TopSuccess model ) ->
-            ( TopSuccess { model | tasks = tasks, completions = completions }
+update : Msg -> Model -> ( Model, Cmd Msg )
+update msg model =
+    case ( msg, model.page ) of
+        ( LinkClicked urlRequest, _ ) ->
+            case urlRequest of
+                Browser.Internal url ->
+                    ( model, Nav.pushUrl model.key (Url.toString url) )
+
+                Browser.External href ->
+                    ( model, Nav.load href )
+
+        ( UrlChanged url, _ ) ->
+            ( { model | page = pageFromUrl url }
             , Cmd.none
             )
 
-        ( GotTasksAndCompletions (Failure error), TopLoading _ ) ->
-            ( TopFailure (FailureModel error)
-            , Cmd.none
+        ( GotTasksAndCompletions (Success tasksAndCompletions), _ ) ->
+            ( { model | todoListData = TodoListData.setTasksAndCompletions tasksAndCompletions model.todoListData }
+            , case model.todoListData of
+                DataFailure _ ->
+                    getCurrentTime
+
+                _ ->
+                    Cmd.none
             )
 
-        ( GotTasksAndCompletions (Failure error), TopSuccess model ) ->
+        ( GotTasksAndCompletions (Failure error), _ ) ->
             let
+                newModel =
+                    { model | todoListData = TodoListData.setError error model.todoListData }
+
                 toast =
                     toastFromHttpError error
             in
-            ( TopSuccess
-                { model
-                    | toasts = model.toasts ++ [ { toast | message = "Nous n'avons pas pu rafraîchr les données" } ]
-                }
-            , Cmd.none
-            )
-
-        ( GotCurrentTime now, TopLoading model ) ->
-            case model.maybeTasksAndCompletions of
-                Just tasksAndCompletions ->
-                    ( TopSuccess (initialModel model.user now tasksAndCompletions)
+            case model.todoListData of
+                DataSuccess _ _ _ ->
+                    ( { newModel
+                        | toasts =
+                            model.toasts
+                                ++ [ { toast | message = "Nous n'avons pas pu rafraîchr les données" } ]
+                      }
                     , Cmd.none
                     )
 
-                Nothing ->
-                    ( TopLoading { model | maybeNow = Just now }
+                _ ->
+                    ( newModel
                     , Cmd.none
                     )
 
-        ( GotCurrentTime now, Login model ) ->
-            ( Login { model | maybeNow = Just now }
+        ( GotCurrentTime now, _ ) ->
+            ( { model | todoListData = TodoListData.setCurrentTime now model.todoListData }
             , Cmd.none
             )
 
-        ( GotCurrentTime now, TopSuccess model ) ->
-            ( TopSuccess { model | now = now }
-            , Cmd.none
-            )
-
-        ( UsernameInput str, Login model ) ->
-            ( Login { model | usernameInputValue = str }
-            , Cmd.none
-            )
-
-        ( SaveUsername, Login model ) ->
-            ( TopLoading (LoadingModel model.usernameInputValue model.maybeNow Nothing)
-            , Cmd.batch
-                [ setStorage model.usernameInputValue
-                , getTasksAndCompletions
-                ]
-            )
-
-        ( _, TopSuccess model ) ->
-            let
-                ( newModel, cmd ) =
-                    updateSuccess msg model
-            in
-            ( TopSuccess newModel
-            , cmd
-            )
-
-        ( _, _ ) ->
-            ( topModel, Cmd.none )
-
-
-updateSuccess : Msg -> Model -> ( Model, Cmd Msg )
-updateSuccess msg model =
-    case msg of
-        Refresh now ->
-            ( { model | now = ( now, Tuple.second model.now ) }
-            , getTasksAndCompletions
-            )
-
-        RemoveToast index ->
+        ( RemoveToast index, _ ) ->
             ( { model
                 | toasts = ListExtra.dropAtIndex index model.toasts
               }
             , Cmd.none
             )
 
+        ( TodoListMsg subMsg, TodoListPage pageModel ) ->
+            let
+                ( newModel, newPageModel, cmd ) =
+                    updateTodoList subMsg model pageModel
+            in
+            ( { newModel | page = TodoListPage newPageModel }
+            , cmd
+            )
+
+        ( LoginMsg subMsg, LoginPage pageModel ) ->
+            let
+                ( newModel, newPageModel, cmd ) =
+                    updateLogin subMsg model pageModel
+            in
+            ( { newModel | page = LoginPage newPageModel }
+            , cmd
+            )
+
+        ( _, _ ) ->
+            ( model, Cmd.none )
+
+
+updateTodoList : TodoListMsg -> Model -> TodoListPageModel -> ( Model, TodoListPageModel, Cmd Msg )
+updateTodoList msg model pageModel =
+    case msg of
+        Refresh now ->
+            ( { model | todoListData = TodoListData.refreshCurrentTime now model.todoListData }
+            , pageModel
+            , getTasksAndCompletions
+            )
+
         RemoveCongratsMessage ->
-            ( { model | congratsMessage = Nothing }
+            ( model
+            , { pageModel | congratsMessage = Nothing }
             , Cmd.none
             )
 
-        CompletionSaved oldCompletion (Failure err) ->
+        CompletionSaved completion (Failure err) ->
             ( { model
-                | completions =
-                    List.filter (\completion -> completion /= oldCompletion) model.completions
+                | todoListData = TodoListData.removeCompletion completion model.todoListData
                 , toasts =
                     model.toasts ++ [ toastFromHttpError err ]
               }
+            , pageModel
             , Cmd.none
             )
 
         CompletionSaved oldCompletion (Success savedCompletion) ->
-            ( { model
-                | completions =
-                    List.map
-                        (\completion ->
-                            if completion == oldCompletion then
-                                savedCompletion
-
-                            else
-                                completion
-                        )
-                        model.completions
-              }
+            ( { model | todoListData = TodoListData.updateCompletion oldCompletion savedCompletion model.todoListData }
+            , pageModel
             , Cmd.none
             )
 
         CompletionSaved _ Loading ->
-            ( model
-            , Cmd.none
-            )
+            ( model, pageModel, Cmd.none )
 
         CompletionDeleted completion (Failure err) ->
             ( { model
-                | completions = completion :: model.completions
+                | todoListData = TodoListData.prependCompletion completion model.todoListData
                 , toasts = model.toasts ++ [ toastFromHttpError err ]
               }
+            , pageModel
             , Cmd.none
             )
 
         CompletionDeleted _ _ ->
-            ( model
-            , Cmd.none
-            )
+            ( model, pageModel, Cmd.none )
 
         TodoCheckedStartAnimation todoItem checked ->
-            ( { model | flipTarget = Just todoItem, flipState = SaveState }
+            ( model
+            , { pageModel | flipTarget = Just todoItem, flipState = SaveState }
             , if checked then
-                Random.generate NewCongratsMessage randomCongratsMessage
+                Random.generate (TodoListMsg << NewCongratsMessage) randomCongratsMessage
 
               else
                 Cmd.none
             )
 
         NewCongratsMessage message ->
-            ( { model | congratsMessage = Just message }
+            ( model
+            , { pageModel | congratsMessage = Just message }
             , Cmd.none
             )
 
         TodoCheckedFlipStateSaved ->
-            case model.flipTarget of
+            case pageModel.flipTarget of
                 Just todoItem ->
-                    updateSuccess (TodoChecked todoItem) { model | flipState = Run }
+                    case todoItem.status of
+                        NotDone ->
+                            ( model
+                            , pageModel
+                            , Task.perform (TodoListMsg << MarkTodoAsDone todoItem) Time.now
+                            )
+
+                        Done _ _ completion ->
+                            ( { model | todoListData = TodoListData.removeCompletion completion model.todoListData }
+                            , { pageModel
+                                | flipTarget = Just { todoItem | status = NotDone }
+                                , flipState = Run
+                              }
+                            , deleteCompletion completion
+                            )
 
                 Nothing ->
-                    ( model, Cmd.none )
+                    ( model, pageModel, Cmd.none )
 
         TodoCheckAnimationDone ->
-            ( { model | flipTarget = Nothing, flipState = Inert }
+            ( model
+            , { pageModel | flipTarget = Nothing, flipState = Inert }
             , Cmd.none
             )
-
-        TodoChecked todoItem ->
-            case todoItem.status of
-                NotDone ->
-                    ( model
-                    , Cmd.batch [ Task.perform (MarkTodoAsDone todoItem) Time.now ]
-                    )
-
-                Done _ _ completion ->
-                    ( { model
-                        | completions = List.filter (\c -> c /= completion) model.completions
-                        , flipTarget = Just { todoItem | status = NotDone }
-                      }
-                    , deleteCompletion completion
-                    )
 
         MarkTodoAsDone todo now ->
-            let
-                completion =
-                    Completion "tmp-id" model.user todo.task.id todo.task.name now
-            in
-            ( { model
-                | completions = completion :: model.completions
-                , flipTarget = Just { todo | status = Done model.user (timeAgo now model.now) completion }
-              }
-            , postCompletion completion
-            )
+            case ( model.maybeUser, model.todoListData ) of
+                ( Just user, DataSuccess nowWithTimeZone _ _ ) ->
+                    let
+                        completion =
+                            Completion "tmp-id" user todo.task.id todo.task.name now
 
-        GotTasksAndCompletions (Success ( tasks, completions )) ->
-            ( { model | tasks = tasks, completions = completions }
-            , Cmd.none
-            )
+                        newTodo =
+                            { todo | status = Done user (timeAgo now nowWithTimeZone) completion }
+                    in
+                    ( { model | todoListData = TodoListData.prependCompletion completion model.todoListData }
+                    , { pageModel
+                        | flipTarget = Just newTodo
+                        , flipState = Run
+                      }
+                    , postCompletion completion
+                    )
 
-        GotTasksAndCompletions _ ->
+                ( _, _ ) ->
+                    ( model, pageModel, Cmd.none )
+
+
+updateLogin : LoginMsg -> Model -> LoginPageModel -> ( Model, LoginPageModel, Cmd Msg )
+updateLogin msg model pageModel =
+    case msg of
+        UsernameInput str ->
             ( model
+            , { pageModel | usernameInputValue = str }
             , Cmd.none
             )
-
-        GotCurrentTime now ->
-            ( { model | now = now }
-            , Cmd.none
-            )
-
-        UsernameInput _ ->
-            ( model, Cmd.none )
 
         SaveUsername ->
-            ( model, Cmd.none )
-
-        NoOp ->
-            ( model, Cmd.none )
+            ( { model | maybeUser = Just pageModel.usernameInputValue }
+            , { pageModel | usernameInputValue = "" }
+            , Cmd.batch
+                [ setStorage pageModel.usernameInputValue
+                , Nav.pushUrl model.key "/"
+                ]
+            )
 
 
 
 -- Subscriptions
 
 
-subscriptions : TopModel -> Sub Msg
+subscriptions : Model -> Sub Msg
 subscriptions _ =
-    Time.every (1000 * 60) Refresh
+    Time.every (1000 * 60) (TodoListMsg << Refresh)
 
 
 
 -- View
 
 
-view : TopModel -> Html Msg
-view topModel =
-    case topModel of
-        Login _ ->
-            main_ [] [ viewLoginForm ]
+view : Model -> Browser.Document Msg
+view model =
+    { title = "Ménage"
+    , body =
+        [ Html.node "menage-notifications" [] []
+        , div
+            [ class "main-container" ]
+            [ case model.page of
+                LoginPage _ ->
+                    main_ [] [ viewLoginForm ]
 
-        TopLoading _ ->
-            main_ [] [ viewLoading ]
+                HistoryPage ->
+                    main_ [] [ text "history" ]
 
-        TopFailure { error } ->
-            main_ [] [ viewLoadingFailed error ]
+                NewTaskPage ->
+                    main_ [] [ text "add task" ]
 
-        TopSuccess model ->
-            div
-                []
-                [ main_ [] (viewSuccess model)
-                , viewToasts model.toasts
-                , viewCongratsMessage model.congratsMessage
-                ]
+                TodoListPage todoListPageModel ->
+                    case model.todoListData of
+                        DataLoading _ _ ->
+                            main_ [] [ viewLoading ]
+
+                        DataFailure error ->
+                            main_ [] [ viewLoadingFailed error ]
+
+                        DataSuccess now tasks completions ->
+                            div
+                                []
+                                [ main_ [] (viewSuccess now tasks completions todoListPageModel)
+                                , viewToasts model.toasts
+                                , viewCongratsMessage todoListPageModel.congratsMessage
+                                ]
+
+                NotFoundPage ->
+                    main_ [] [ text "404 : Cette page n'existe pas" ]
+            ]
+        ]
+    }
 
 
-viewSuccess : Model -> List (Html Msg)
-viewSuccess model =
+viewSuccess : ( Posix, Zone ) -> List TaskDefinition -> List Completion -> TodoListPageModel -> List (Html Msg)
+viewSuccess now tasks completions model =
     let
         ( done, notDone ) =
-            model.completions
-                |> TodoList.fromTasksAndCompletions model.now model.tasks
+            completions
+                |> TodoList.fromTasksAndCompletions now tasks
                 |> List.partition (\todoItem -> todoItem.status /= NotDone)
 
         sortByCompletedAtDesc =
@@ -498,11 +533,11 @@ viewSuccess model =
         [ viewTodoListNotDone model.flipTarget 0 (ListExtra.uniqueWithCount notDone)
         , viewTodoListDone model.flipTarget 1 (sortByCompletedAtDesc done)
         ]
-    , viewHistory model.now (model.completions |> List.sortBy (.completedAt >> posixToMillis) |> List.reverse)
+    , viewHistory now (completions |> List.sortBy (.completedAt >> posixToMillis) |> List.reverse)
     , Html.node "gsap-flip"
         [ property "status" (Encode.string flipState)
-        , Html.Events.on "flip-state-saved" (Json.Decode.succeed TodoCheckedFlipStateSaved)
-        , Html.Events.on "flip-done" (Json.Decode.succeed TodoCheckAnimationDone)
+        , Html.Events.on "flip-state-saved" (Json.Decode.succeed (TodoListMsg TodoCheckedFlipStateSaved))
+        , Html.Events.on "flip-done" (Json.Decode.succeed (TodoListMsg TodoCheckAnimationDone))
         ]
         []
     ]
@@ -511,9 +546,9 @@ viewSuccess model =
 viewLoginForm : Html Msg
 viewLoginForm =
     form
-        [ onSubmit SaveUsername ]
+        [ onSubmit (LoginMsg SaveUsername) ]
         [ label [ for "name" ] [ text "Votre nom" ]
-        , input [ id "name", name "name", required True, onInput UsernameInput ] []
+        , input [ id "name", name "name", required True, onInput (LoginMsg << UsernameInput) ] []
         , button [] [ text "Sauvegarder" ]
         ]
 
@@ -600,7 +635,14 @@ viewTodoDone index ( flipID, todoItem ) =
         [ class "todo", attribute "data-flip-id" flipID ]
         [ div
             []
-            [ input [ type_ "checkbox", checked True, id id_, onCheck (TodoCheckedStartAnimation todoItem) ] [] ]
+            [ input
+                [ type_ "checkbox"
+                , checked True
+                , id id_
+                , onCheck (TodoListMsg << TodoCheckedStartAnimation todoItem)
+                ]
+                []
+            ]
         , div
             []
             [ label [ for id_ ] [ text todoItem.task.name ]
@@ -638,7 +680,14 @@ viewTodoNotDone index ( flipID, ( todoItem, count, isAnimating ) ) =
         ([ class "todo", attribute "data-flip-id" flipID ] ++ animationAttrs)
         [ div
             []
-            [ input [ type_ "checkbox", checked isAnimating, id id_, onCheck (TodoCheckedStartAnimation todoItem) ] [] ]
+            [ input
+                [ type_ "checkbox"
+                , checked isAnimating
+                , id id_
+                , onCheck (TodoListMsg << TodoCheckedStartAnimation todoItem)
+                ]
+                []
+            ]
         , div
             []
             [ label [ for id_ ] [ text todoItem.task.name ]
@@ -810,13 +859,13 @@ viewCongratsMessage maybeMessage =
                 [ class "congrats-message-container"
                 , Html.Events.on "animationend"
                     (field "animationName" string
-                        |> Json.Decode.map
+                        |> Json.Decode.andThen
                             (\name ->
                                 if name == "fade-out" then
-                                    RemoveCongratsMessage
+                                    Json.Decode.succeed (TodoListMsg RemoveCongratsMessage)
 
                                 else
-                                    NoOp
+                                    Json.Decode.fail "silent failure, not the right animation"
                             )
                     )
                 ]
@@ -840,12 +889,19 @@ getTasksAndCompletions =
 
 postCompletion : Completion -> Cmd Msg
 postCompletion completion =
-    apiPost "/create-completion" (Http.jsonBody (completionEncoder completion)) (CompletionSaved completion) completionDecoder
+    apiPost
+        "/create-completion"
+        (Http.jsonBody (completionEncoder completion))
+        (TodoListMsg << CompletionSaved completion)
+        completionDecoder
 
 
 deleteCompletion : Completion -> Cmd Msg
 deleteCompletion completion =
-    apiDelete ("/delete-completion?id=" ++ completion.id) (CompletionDeleted completion) (Json.Decode.succeed "Ok")
+    apiDelete
+        ("/delete-completion?id=" ++ completion.id)
+        (TodoListMsg << CompletionDeleted completion)
+        (Json.Decode.succeed "Ok")
 
 
 apiGet : String -> (RemoteData a -> msg) -> Decoder a -> Cmd msg
