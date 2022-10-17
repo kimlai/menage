@@ -63,7 +63,7 @@ form > * + * {
 
 
 label + input:not([type=checkbox]) {
-  margin-top: var(--size-1);
+  margin-top: var(--size-2);
 }
 
 .todo {
@@ -115,27 +115,27 @@ main .todo[data-animate=true] {
   background: var(--grape-1);
   color: var(--grape-9);
 }
-.tag.twice-a-day {
+.tag.daily-2 {
   background: var(--blue-1);
   color: var(--blue-9);
 }
-.tag.four-times-a-week {
+.tag.weekly-4 {
   background: var(--cyan-1);
   color: var(--cyan-9);
 }
-.tag.twice-a-week {
+.tag.weekly-2 {
   background: var(--teal-1);
   color: var(--teal-9);
 }
-.tag.every-week {
+.tag.weekly-1 {
   background: var(--green-1);
   color: var(--green-9);
 }
-.tag.every-other-week {
+.tag.weekly-2 {
   background: var(--lime-1);
   color: var(--lime-9);
 }
-.tag.every-month {
+.tag.monthly-1 {
   background: var(--yellow-1);
   color: var(--yellow-9);
 }
@@ -257,4 +257,73 @@ td + td {
     1s 0.5s float forwards,
     1s 1.5s fade-out forwards,
     1s 1.5s ping forwards;
+}
+
+/*******************
+ * new task form
+ *******************/
+
+.new-task-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-3);
+}
+
+.new-task-form input:not([type=radio]) {
+  width: 100%;
+}
+
+.radio-field {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+}
+
+fieldset > * + * {
+  margin-top: var(--size-2);
+}
+
+.frequency-counter {
+  display: flex;
+  align-items: center;
+  gap: var(--size-3);
+}
+
+.frequency-counter .counter-input {
+  display: flex;
+  align-items: center;
+  box-shadow: var(--inner-shadow-1);
+  background: var(--surface-2);
+  padding: var(--size-2);
+  gap: var(--size-3);
+}
+
+.frequency-counter button {
+  padding: 0;
+}
+
+button[type=submit] {
+  background: var(--teal-6);
+  color: white;
+}
+
+.new-task-form button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--size-3);
+}
+
+.new-task-form button:not(.saving) svg {
+  width: 0;
+}
+
+.new-task-form button svg {
+  transition: width 100ms;
+  width: 2ch;
+  stroke: var(--teal-1);
+  fill: none;
+  animation: var(--animation-spin);
+  animation-timing-function: var(--ease-squish-1);
+  animation-duration: 1.3s;
 }

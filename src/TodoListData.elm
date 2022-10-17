@@ -118,3 +118,13 @@ prependCompletion completion todoListData =
 
         _ ->
             todoListData
+
+
+addTask : TaskDefinition -> TodoListData -> TodoListData
+addTask task todoListData =
+    case todoListData of
+        DataSuccess now tasks completions ->
+            DataSuccess now (task :: tasks) completions
+
+        _ ->
+            todoListData

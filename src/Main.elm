@@ -3,10 +3,11 @@ port module Main exposing (..)
 import Array
 import Browser
 import Browser.Navigation as Nav
-import Html exposing (Html, button, div, form, h2, input, label, li, main_, output, span, table, tbody, td, text, tr, ul)
-import Html.Attributes exposing (attribute, checked, class, for, id, name, property, required, type_)
+import Html exposing (Html, button, div, fieldset, form, h2, img, input, label, legend, li, main_, output, span, table, tbody, td, text, tr, ul)
+import Html.Attributes exposing (alt, attribute, checked, class, classList, disabled, for, id, name, property, required, src, type_)
 import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
 import Http exposing (Error(..))
+import Icons
 import Iso8601
 import Json.Decode exposing (Decoder, andThen, at, fail, field, list, map2, map3, map5, string, succeed)
 import Json.Encode as Encode
@@ -45,7 +46,7 @@ type Page
     = LoginPage LoginPageModel
     | TodoListPage TodoListPageModel
     | HistoryPage
-    | NewTaskPage
+    | NewTaskPage NewTaskPageModel
     | NotFoundPage
 
 
@@ -57,7 +58,7 @@ pageFromUrl url =
                 [ Url.Parser.map (TodoListPage initTodoListPageModel) Url.Parser.top
                 , Url.Parser.map (LoginPage initLoginPageModel) (Url.Parser.s "login")
                 , Url.Parser.map HistoryPage (Url.Parser.s "history")
-                , Url.Parser.map NewTaskPage (Url.Parser.s "new-task")
+                , Url.Parser.map (NewTaskPage initNewTaskPageModel) (Url.Parser.s "new-task")
                 ]
             )
         |> Maybe.withDefault NotFoundPage
@@ -107,6 +108,29 @@ type FlipState
 type alias Toast =
     { title : String
     , message : String
+    }
+
+
+type alias NewTaskPageModel =
+    { name : String
+    , repeats : Repeats
+    , times : Int
+    , saving : Bool
+    }
+
+
+type Repeats
+    = EveryDay
+    | EveryWeek
+    | EveryMonth
+
+
+initNewTaskPageModel : NewTaskPageModel
+initNewTaskPageModel =
+    { name = ""
+    , repeats = EveryDay
+    , times = 1
+    , saving = False
     }
 
 
@@ -204,6 +228,7 @@ type Msg
     | RemoveToast Int
     | TodoListMsg TodoListMsg
     | LoginMsg LoginMsg
+    | NewTaskMsg NewTaskMsg
 
 
 type TodoListMsg
@@ -221,6 +246,15 @@ type TodoListMsg
 type LoginMsg
     = UsernameInput String
     | SaveUsername
+
+
+type NewTaskMsg
+    = SetRepeats Repeats
+    | SetTaskName String
+    | Increment
+    | Decrement
+    | CreateNewTask
+    | TaskSaved (RemoteData TaskDefinition)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -299,6 +333,15 @@ update msg model =
                     updateLogin subMsg model pageModel
             in
             ( { newModel | page = LoginPage newPageModel }
+            , cmd
+            )
+
+        ( NewTaskMsg subMsg, NewTaskPage pageModel ) ->
+            let
+                ( newModel, newPageModel, cmd ) =
+                    updateNewTask subMsg model pageModel
+            in
+            ( { newModel | page = NewTaskPage newPageModel }
             , cmd
             )
 
@@ -437,6 +480,71 @@ updateLogin msg model pageModel =
             )
 
 
+updateNewTask : NewTaskMsg -> Model -> NewTaskPageModel -> ( Model, NewTaskPageModel, Cmd Msg )
+updateNewTask msg model pageModel =
+    case msg of
+        SetRepeats repeats ->
+            ( model
+            , { pageModel | repeats = repeats }
+            , Cmd.none
+            )
+
+        SetTaskName name ->
+            ( model
+            , { pageModel | name = name }
+            , Cmd.none
+            )
+
+        Increment ->
+            ( model
+            , { pageModel | times = pageModel.times + 1 }
+            , Cmd.none
+            )
+
+        Decrement ->
+            ( model
+            , { pageModel | times = pageModel.times - 1 }
+            , Cmd.none
+            )
+
+        CreateNewTask ->
+            let
+                task =
+                    { id = "tmp-id"
+                    , name = pageModel.name
+                    , recurrence =
+                        case pageModel.repeats of
+                            EveryDay ->
+                                Daily pageModel.times
+
+                            EveryWeek ->
+                                Weekly pageModel.times
+
+                            EveryMonth ->
+                                Monthly pageModel.times
+                    }
+            in
+            ( model
+            , { pageModel | saving = True }
+            , postTask task
+            )
+
+        TaskSaved (Success task) ->
+            ( { model | todoListData = TodoListData.addTask task model.todoListData }
+            , { pageModel | saving = False }
+            , Nav.pushUrl model.key "/"
+            )
+
+        TaskSaved (Failure error) ->
+            ( { model | toasts = model.toasts ++ [ toastFromHttpError error ] }
+            , { pageModel | saving = False }
+            , Cmd.none
+            )
+
+        TaskSaved Loading ->
+            ( model, pageModel, Cmd.none )
+
+
 
 -- Subscriptions
 
@@ -455,6 +563,7 @@ view model =
     { title = "Ménage"
     , body =
         [ Html.node "menage-notifications" [] []
+        , viewToasts model.toasts
         , div
             [ class "main-container" ]
             [ case model.page of
@@ -464,8 +573,8 @@ view model =
                 HistoryPage ->
                     main_ [] [ text "history" ]
 
-                NewTaskPage ->
-                    main_ [] [ text "add task" ]
+                NewTaskPage pageModel ->
+                    main_ [] [ viewNewTaskForm pageModel ]
 
                 TodoListPage todoListPageModel ->
                     case model.todoListData of
@@ -479,7 +588,6 @@ view model =
                             div
                                 []
                                 [ main_ [] (viewSuccess now tasks completions todoListPageModel)
-                                , viewToasts model.toasts
                                 , viewCongratsMessage todoListPageModel.congratsMessage
                                 ]
 
@@ -591,6 +699,96 @@ viewToast index toast =
         ]
 
 
+viewNewTaskForm : NewTaskPageModel -> Html Msg
+viewNewTaskForm model =
+    form
+        [ class "new-task-form"
+        , onSubmit (NewTaskMsg CreateNewTask)
+        ]
+        [ div
+            []
+            [ label
+                [ for "task-name" ]
+                [ text "Nom de la tâche" ]
+            , input
+                [ id "task-name"
+                , name "task-name"
+                , required True
+                , onInput (NewTaskMsg << SetTaskName)
+                ]
+                []
+            ]
+        , fieldset
+            []
+            (legend [] [ text "Répétitions" ]
+                :: ([ ( "daily", "chaque jour", EveryDay )
+                    , ( "weekly", "chaque semaine", EveryWeek )
+                    , ( "monthly", "chaque mois", EveryMonth )
+                    ]
+                        |> List.map (viewRepeatRadio model.repeats)
+                   )
+            )
+        , viewFrequencyCounter model.repeats model.times
+        , button
+            [ type_ "submit"
+            , classList [ ( "saving", model.saving ) ]
+            ]
+            [ Icons.arrowPath [ attribute "aria-hidden" "true" ]
+            , div [] [ text "Ajouter" ]
+            ]
+        ]
+
+
+viewRepeatRadio : Repeats -> ( String, String, Repeats ) -> Html Msg
+viewRepeatRadio selected ( id_, text_, repeats ) =
+    div [ class "radio-field" ]
+        [ input
+            [ type_ "radio"
+            , id id_
+            , name "repeats"
+            , checked (repeats == selected)
+            , onInput (\_ -> (NewTaskMsg << SetRepeats) repeats)
+            ]
+            []
+        , label [ for id_ ] [ text text_ ]
+        ]
+
+
+viewFrequencyCounter : Repeats -> Int -> Html Msg
+viewFrequencyCounter repeats times =
+    div
+        [ class "frequency-counter" ]
+        [ div [] [ text "à faire" ]
+        , div
+            [ class "counter-input" ]
+            [ button
+                [ onClick (NewTaskMsg Decrement)
+                , type_ "button"
+                , disabled (times <= 1)
+                ]
+                [ text "-" ]
+            , div [] [ text (String.fromInt times ++ " fois") ]
+            , button
+                [ onClick (NewTaskMsg Increment), type_ "button" ]
+                [ text "+" ]
+            ]
+        , div [] [ text (repeatsToString repeats) ]
+        ]
+
+
+repeatsToString : Repeats -> String
+repeatsToString repeats =
+    case repeats of
+        EveryDay ->
+            "par jour"
+
+        EveryWeek ->
+            "par semaine"
+
+        EveryMonth ->
+            "par mois"
+
+
 viewTodoListDone : Maybe TodoItem -> Int -> List TodoItem -> Html Msg
 viewTodoListDone flipTarget i todoList =
     todoList
@@ -657,8 +855,8 @@ viewTodoDone index ( flipID, todoItem ) =
                 -- impossible, probably can be refactored out
                 NotDone ->
                     div
-                        [ class ("tag " ++ frequencyToClass todoItem.task.frequency) ]
-                        [ text (frequencyToString todoItem.task.frequency 1) ]
+                        [ class ("tag " ++ recurrenceToClass todoItem.task.recurrence) ]
+                        [ text (recurrenceToString todoItem.task.recurrence 1) ]
             ]
         ]
 
@@ -702,8 +900,8 @@ viewTodoNotDone index ( flipID, ( todoItem, count, isAnimating ) ) =
 
                 NotDone ->
                     div
-                        [ class ("tag " ++ frequencyToClass todoItem.task.frequency) ]
-                        [ text (frequencyToString todoItem.task.frequency count) ]
+                        [ class ("tag " ++ recurrenceToClass todoItem.task.recurrence) ]
+                        [ text (recurrenceToString todoItem.task.recurrence count) ]
             ]
         ]
 
@@ -746,10 +944,10 @@ viewTimeAgo timeAgo_ short =
                 "il y a plus d'un mois"
 
 
-frequencyToString : Frequency -> Int -> String
-frequencyToString frequency count =
-    case frequency of
-        TwiceADay ->
+recurrenceToString : Recurrence -> Int -> String
+recurrenceToString recurrence count =
+    case recurrence of
+        Daily _ ->
             "aujourd'hui"
                 ++ (if count > 1 then
                         " (x" ++ String.fromInt count ++ ")"
@@ -758,7 +956,7 @@ frequencyToString frequency count =
                         ""
                    )
 
-        FourTimesAWeek ->
+        Weekly _ ->
             "cette semaine"
                 ++ (if count > 1 then
                         " (x" ++ String.fromInt count ++ ")"
@@ -767,34 +965,7 @@ frequencyToString frequency count =
                         ""
                    )
 
-        TwiceAWeek ->
-            "cette semaine"
-                ++ (if count > 1 then
-                        " (x" ++ String.fromInt count ++ ")"
-
-                    else
-                        ""
-                   )
-
-        EveryWeek ->
-            "cette semaine"
-                ++ (if count > 1 then
-                        " (x" ++ String.fromInt count ++ ")"
-
-                    else
-                        ""
-                   )
-
-        EveryOtherWeek ->
-            "ce mois-ci"
-                ++ (if count > 1 then
-                        " (x" ++ String.fromInt count ++ ")"
-
-                    else
-                        ""
-                   )
-
-        EveryMonth ->
+        Monthly _ ->
             "ce mois-ci"
                 ++ (if count > 1 then
                         " (x" ++ String.fromInt count ++ ")"
@@ -804,26 +975,17 @@ frequencyToString frequency count =
                    )
 
 
-frequencyToClass : Frequency -> String
-frequencyToClass frequency =
-    case frequency of
-        TwiceADay ->
-            "twice-a-day"
+recurrenceToClass : Recurrence -> String
+recurrenceToClass recurrence =
+    case recurrence of
+        Daily count ->
+            "daily-" ++ String.fromInt count
 
-        TwiceAWeek ->
-            "twice-a-week"
+        Weekly count ->
+            "weekly-" ++ String.fromInt count
 
-        FourTimesAWeek ->
-            "four-times-a-week"
-
-        EveryWeek ->
-            "every-week"
-
-        EveryOtherWeek ->
-            "every-other-week"
-
-        EveryMonth ->
-            "every-month"
+        Monthly count ->
+            "monthly-" ++ String.fromInt count
 
 
 viewHistory : ( Posix, Zone ) -> List Completion -> Html msg
@@ -904,6 +1066,15 @@ deleteCompletion completion =
         (Json.Decode.succeed "Ok")
 
 
+postTask : TaskDefinition -> Cmd Msg
+postTask task =
+    apiPost
+        "/create-task"
+        (Http.jsonBody (taskDefinitionEncoder task))
+        (NewTaskMsg << TaskSaved)
+        taskDecoder
+
+
 apiGet : String -> (RemoteData a -> msg) -> Decoder a -> Cmd msg
 apiGet path msg decoder =
     apiRequest "GET" path Http.emptyBody msg decoder
@@ -953,35 +1124,35 @@ taskDecoder =
     map3 TaskDefinition
         (field "id" string)
         (at [ "fields", "name" ] string)
-        (at [ "fields", "frequency" ] frequencyDecoder)
+        (at [ "fields", "frequency" ] recurrenceDecoder)
 
 
-frequencyDecoder : Decoder Frequency
-frequencyDecoder =
+recurrenceDecoder : Decoder Recurrence
+recurrenceDecoder =
     string
         |> andThen
             (\str ->
                 case str of
                     "twice a day" ->
-                        succeed TwiceADay
+                        succeed (Daily 2)
 
                     "every other week" ->
-                        succeed EveryOtherWeek
+                        succeed (Monthly 2)
 
                     "every week" ->
-                        succeed EveryWeek
+                        succeed (Weekly 1)
 
                     "four times a week" ->
-                        succeed FourTimesAWeek
+                        succeed (Weekly 4)
 
                     "twice a week" ->
-                        succeed TwiceAWeek
+                        succeed (Weekly 2)
 
                     "every month" ->
-                        succeed EveryMonth
+                        succeed (Monthly 1)
 
                     _ ->
-                        fail "Could not decode frequency"
+                        fail "Could not decode recurrence"
             )
 
 
@@ -1022,30 +1193,33 @@ taskDefinitionEncoder taskDefinition =
     Encode.object
         [ ( "id", Encode.string taskDefinition.id )
         , ( "name", Encode.string taskDefinition.name )
-        , ( "frequency", frequencyEncoder taskDefinition.frequency )
+        , ( "frequency", recurrenceEncoder taskDefinition.recurrence )
         ]
 
 
-frequencyEncoder : Frequency -> Encode.Value
-frequencyEncoder frequency =
-    case frequency of
-        TwiceADay ->
+recurrenceEncoder : Recurrence -> Encode.Value
+recurrenceEncoder recurrence =
+    case recurrence of
+        Daily 2 ->
             Encode.string "twice a day"
 
-        FourTimesAWeek ->
+        Weekly 4 ->
             Encode.string "four times a week"
 
-        TwiceAWeek ->
+        Weekly 2 ->
             Encode.string "twice a week"
 
-        EveryWeek ->
+        Weekly 1 ->
             Encode.string "every week"
 
-        EveryOtherWeek ->
+        Monthly 2 ->
             Encode.string "every other week"
 
-        EveryMonth ->
+        Monthly 1 ->
             Encode.string "every month"
+
+        _ ->
+            Encode.string "unknown recurrence"
 
 
 todoStatusEncoder : TodoStatus -> Encode.Value

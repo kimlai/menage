@@ -1,4 +1,4 @@
-module TodoList exposing (Completion, Frequency(..), TaskDefinition, TaskID, TimeAgo(..), TodoItem, TodoStatus(..), User, fromTasksAndCompletions, timeAgo)
+module TodoList exposing (Completion, Recurrence(..), TaskDefinition, TaskID, TimeAgo(..), TodoItem, TodoStatus(..), User, fromTasksAndCompletions, timeAgo)
 
 import Time exposing (Posix, Weekday(..), Zone, millisToPosix, posixToMillis, toHour, toMillis, toMinute, toSecond)
 
@@ -14,17 +14,14 @@ type alias TaskID =
 type alias TaskDefinition =
     { id : TaskID
     , name : TaskName
-    , frequency : Frequency
+    , recurrence : Recurrence
     }
 
 
-type Frequency
-    = TwiceADay
-    | FourTimesAWeek
-    | TwiceAWeek
-    | EveryWeek
-    | EveryOtherWeek
-    | EveryMonth
+type Recurrence
+    = Daily Int
+    | Weekly Int
+    | Monthly Int
 
 
 type alias TaskName =
@@ -101,6 +98,11 @@ fromTaskInstancesAndCompletions now completions tasks =
 tasksFromDefinition : ( Posix, Zone ) -> TaskDefinition -> List Task
 tasksFromDefinition now task =
     let
+        thisMonth =
+            { task = task
+            , start = firstDayOfMonth now
+            }
+
         thisWeek =
             { task = task
             , start = lastMonday now
@@ -111,30 +113,15 @@ tasksFromDefinition now task =
             , start = today now
             }
     in
-    case task.frequency of
-        TwiceADay ->
-            List.repeat 2 today_
+    case task.recurrence of
+        Daily count ->
+            List.repeat count today_
 
-        FourTimesAWeek ->
-            List.repeat 4 thisWeek
+        Weekly count ->
+            List.repeat count thisWeek
 
-        TwiceAWeek ->
-            List.repeat 2 thisWeek
-
-        EveryWeek ->
-            [ thisWeek ]
-
-        EveryOtherWeek ->
-            List.repeat 2
-                { task = task
-                , start = firstDayOfMonth now
-                }
-
-        EveryMonth ->
-            [ { task = task
-              , start = firstDayOfMonth now
-              }
-            ]
+        Monthly count ->
+            List.repeat count thisMonth
 
 
 previousDay : Posix -> Posix
