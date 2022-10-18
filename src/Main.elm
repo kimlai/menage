@@ -641,7 +641,12 @@ viewSuccess now tasks completions model =
         [ div
             []
             [ viewTodoListNotDone model.flipTarget 0 (ListExtra.uniqueWithCount notDone)
-            , a [ class "new-task-button",  href "/new-task" ] [ text "nouvelle tâche" ]
+            , a
+                [ class "new-task-button"
+                ,  href "/new-task"
+                , attribute "data-flip-id" "new-task-button"
+                ]
+                [ text "nouvelle tâche" ]
             ]
         , viewTodoListDone model.flipTarget 1 (sortByCompletedAtDesc done)
         ]

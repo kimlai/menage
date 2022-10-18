@@ -4,13 +4,13 @@
 
 html {
   accent-color: var(--teal-6);
+  font-family: var(--font-mono);
 }
 
 .main-container {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  font-family: var(--font-mono);
 }
 
 main {
@@ -216,8 +216,8 @@ td + td {
   max-inline-size: min(80ch, 90vw);
   opacity: 0;
   animation: var(--animation-fade-in) forwards, var(--animation-slide-in-up);
-  animation-timing-function: var(--ease-4);
-  animation-duration: 300ms;
+  animation-timing-function: var(--ease-out-4);
+  animation-duration: 250ms;
 
   display: flex;
   gap: var(--size-4);
@@ -341,6 +341,6 @@ button[type=submit] {
   stroke: var(--teal-1);
   fill: none;
   animation: var(--animation-spin);
-  animation-timing-function: var(--ease-squish-1);
-  animation-duration: 1.3s;
+  animation-timing-function: var(--ease-2);
+  animation-duration: 1s;
 }
