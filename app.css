@@ -263,6 +263,23 @@ td + td {
  * new task form
  *******************/
 
+a.new-task-button:hover  {
+  text-decoration: none;
+}
+a.new-task-button  {
+  color: unset;
+}
+.new-task-button  {
+  display: inline-block;
+  padding-inline-start: var(--size-2);
+  margin-top: var(--size-6);
+  margin-left: 3ch;
+  background: var(--surface-2);
+  padding: var(--size-2) var(--size-4);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-1);
+}
+
 .new-task-form {
   display: flex;
   flex-direction: column;

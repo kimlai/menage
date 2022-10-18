@@ -3,8 +3,8 @@ port module Main exposing (..)
 import Array
 import Browser
 import Browser.Navigation as Nav
-import Html exposing (Html, button, div, fieldset, form, h2, img, input, label, legend, li, main_, output, span, table, tbody, td, text, tr, ul)
-import Html.Attributes exposing (alt, attribute, checked, class, classList, disabled, for, id, name, property, required, src, type_)
+import Html exposing (Html, a, button, div, fieldset, form, h2, input, label, legend, li, main_, output, span, table, tbody, td, text, tr, ul)
+import Html.Attributes exposing (attribute, checked, class, classList, disabled, for, href, id, name, property, required, type_)
 import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
 import Http exposing (Error(..))
 import Icons
@@ -638,7 +638,11 @@ viewSuccess now tasks completions model =
     in
     [ div
         [ class "todolists-container" ]
-        [ viewTodoListNotDone model.flipTarget 0 (ListExtra.uniqueWithCount notDone)
+        [ div
+            []
+            [ viewTodoListNotDone model.flipTarget 0 (ListExtra.uniqueWithCount notDone)
+            , a [ class "new-task-button",  href "/new-task" ] [ text "nouvelle tâche" ]
+            ]
         , viewTodoListDone model.flipTarget 1 (sortByCompletedAtDesc done)
         ]
     , viewHistory now (completions |> List.sortBy (.completedAt >> posixToMillis) |> List.reverse)
