@@ -45,7 +45,7 @@ main =
 type Page
     = LoginPage LoginPageModel
     | TodoListPage TodoListPageModel
-    | HistoryPage
+    | StatisticsPage
     | NewTaskPage NewTaskPageModel
     | NotFoundPage
 
@@ -57,7 +57,7 @@ pageFromUrl url =
             (Url.Parser.oneOf
                 [ Url.Parser.map (TodoListPage initTodoListPageModel) Url.Parser.top
                 , Url.Parser.map (LoginPage initLoginPageModel) (Url.Parser.s "login")
-                , Url.Parser.map HistoryPage (Url.Parser.s "history")
+                , Url.Parser.map StatisticsPage (Url.Parser.s "statistics")
                 , Url.Parser.map (NewTaskPage initNewTaskPageModel) (Url.Parser.s "new-task")
                 ]
             )
@@ -570,9 +570,6 @@ view model =
                 LoginPage _ ->
                     main_ [] [ viewLoginForm ]
 
-                HistoryPage ->
-                    main_ [] [ text "history" ]
-
                 NewTaskPage pageModel ->
                     main_ [] [ viewNewTaskForm pageModel ]
 
@@ -590,6 +587,17 @@ view model =
                                 [ main_ [] (viewSuccess now tasks completions todoListPageModel)
                                 , viewCongratsMessage todoListPageModel.congratsMessage
                                 ]
+
+                StatisticsPage ->
+                    case model.todoListData of
+                        DataLoading _ _ ->
+                            main_ [] [ viewLoading ]
+
+                        DataFailure error ->
+                            main_ [] [ viewLoadingFailed error ]
+
+                        DataSuccess _ tasks completions ->
+                            main_ [] [ viewStatistics tasks completions ]
 
                 NotFoundPage ->
                     main_ [] [ text "404 : Cette page n'existe pas" ]
@@ -643,7 +651,7 @@ viewSuccess now tasks completions model =
             [ viewTodoListNotDone model.flipTarget 0 (ListExtra.uniqueWithCount notDone)
             , a
                 [ class "new-task-button"
-                ,  href "/new-task"
+                , href "/new-task"
                 , attribute "data-flip-id" "new-task-button"
                 ]
                 [ text "nouvelle tâche" ]
@@ -1019,6 +1027,60 @@ viewCompletion now completion =
         [ td [] [ text completion.taskName ]
         , td [] [ span [ class "tag time-ago" ] [ text (viewTimeAgo (TodoList.timeAgo completion.completedAt now) True) ] ]
         , td [] [ span [ class "tag user" ] [ text completion.user ] ]
+        ]
+
+
+viewStatistics : List TaskDefinition -> List Completion -> Html msg
+viewStatistics tasks completions =
+    div
+        [ class "statistics" ]
+        (viewTaskStatistics completions Nothing
+            :: (tasks
+                    |> List.map Just
+                    |> List.map (viewTaskStatistics completions)
+               )
+        )
+
+
+viewTaskStatistics : List Completion -> Maybe TaskDefinition -> Html msg
+viewTaskStatistics completions maybeTask =
+    let
+        taskCompletions =
+            maybeTask
+                |> Maybe.map (\task -> List.filter (\{ taskId } -> taskId == task.id) completions)
+                |> Maybe.withDefault completions
+
+        users =
+            completions
+                |> List.map .user
+                |> ListExtra.unique
+
+        countCompletions user_ =
+            taskCompletions
+                |> List.filter (\{ user } -> user == user_)
+                |> List.length
+
+        counts =
+            users
+                |> List.map (\user -> ( user, countCompletions user ))
+                |> List.sortBy Tuple.second
+                |> List.reverse
+    in
+    div
+        []
+        [ h2 [] [ maybeTask |> Maybe.map .name |> Maybe.withDefault "Total" |> text ]
+        , table
+            []
+            (List.map viewCount counts)
+        ]
+
+
+viewCount : ( User, Int ) -> Html msg
+viewCount ( user, count ) =
+    tr
+        []
+        [ td [] [ text user ]
+        , td [] [ text (String.fromInt count) ]
         ]
 
 

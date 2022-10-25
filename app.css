@@ -344,3 +344,21 @@ button[type=submit] {
   animation-timing-function: var(--ease-2);
   animation-duration: 1s;
 }
+
+.statistics > * + * {
+  margin-top: var(--size-4);
+}
+
+.statistics h2 {
+  margin: 0;
+  margin-bottom: var(--size-2);
+  font-size: var(--font-size-1);
+}
+
+.statistics table {
+  min-width: 25ch;
+}
+
+.statistics td:last-child {
+  text-align: right;
+}
