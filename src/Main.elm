@@ -4,7 +4,7 @@ import Array
 import Browser
 import Browser.Navigation as Nav
 import Html exposing (Html, a, button, div, fieldset, form, h2, input, label, legend, li, main_, output, span, table, tbody, td, text, tr, ul)
-import Html.Attributes exposing (attribute, checked, class, classList, disabled, for, href, id, name, property, required, type_)
+import Html.Attributes exposing (attribute, checked, class, classList, disabled, for, href, id, name, property, required, style, type_)
 import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
 import Http exposing (Error(..))
 import Icons
@@ -1055,32 +1055,47 @@ viewTaskStatistics completions maybeTask =
                 |> List.map .user
                 |> ListExtra.unique
 
-        countCompletions user_ =
-            taskCompletions
+        countCompletions user_ completions_ =
+            completions_
                 |> List.filter (\{ user } -> user == user_)
                 |> List.length
 
         counts =
             users
-                |> List.map (\user -> ( user, countCompletions user ))
+                |> List.map (\user -> ( user, countCompletions user taskCompletions ))
                 |> List.sortBy Tuple.second
                 |> List.reverse
+
+        max =
+            users
+                |> List.map (\user -> countCompletions user completions )
+                |> List.maximum
+                |> Maybe.withDefault 0
     in
     div
         []
         [ h2 [] [ maybeTask |> Maybe.map .name |> Maybe.withDefault "Total" |> text ]
         , table
             []
-            (List.map viewCount counts)
+            (List.map (viewCount max) counts)
         ]
 
 
-viewCount : ( User, Int ) -> Html msg
-viewCount ( user, count ) =
+viewCount : Int -> ( User, Int ) -> Html msg
+viewCount max ( user, count ) =
     tr
         []
         [ td [] [ text user ]
         , td [] [ text (String.fromInt count) ]
+        , td
+            []
+            [ div
+                [ attribute "aria-hidden" "true"
+                , style "width" (String.fromFloat (toFloat count * 100 / toFloat max) ++ "%")
+                , class "points"
+                ]
+                []
+            ]
         ]
 
 

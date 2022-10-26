@@ -359,6 +359,18 @@ button[type=submit] {
   min-width: 25ch;
 }
 
-.statistics td:last-child {
+.statistics td:nth-child(2) {
   text-align: right;
+}
+
+.statistics td:nth-child(3) {
+  position: relative;
+  min-width: 10ch;
+}
+
+.statistics .points {
+  position: absolute;
+  top: var(--size-2);
+  bottom: var(--size-2);
+  background: var(--teal-4);
 }
