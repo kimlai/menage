@@ -3,7 +3,7 @@ port module Main exposing (..)
 import Array
 import Browser
 import Browser.Navigation as Nav
-import Html exposing (Html, a, button, div, fieldset, form, h2, input, label, legend, li, main_, output, span, table, tbody, td, text, tr, ul)
+import Html exposing (Html, a, button, div, fieldset, form, h2, input, label, legend, li, main_, nav, output, span, table, tbody, td, text, tr, ul)
 import Html.Attributes exposing (attribute, checked, class, classList, disabled, for, href, id, name, property, required, style, type_)
 import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
 import Http exposing (Error(..))
@@ -14,12 +14,14 @@ import Json.Encode as Encode
 import ListExtra
 import Random
 import RemoteData exposing (RemoteData(..))
+import Svg
 import Task
 import Time exposing (Posix, Weekday(..), Zone, posixToMillis)
 import TodoList exposing (..)
 import TodoListData exposing (..)
 import Url
 import Url.Parser
+import VirtualDom
 
 
 
@@ -562,8 +564,8 @@ view : Model -> Browser.Document Msg
 view model =
     { title = "Ménage"
     , body =
-        [ Html.node "menage-notifications" [] []
-        , viewToasts model.toasts
+        [ viewToasts model.toasts
+        , viewNavigation model.page
         , div
             [ class "main-container" ]
             [ case model.page of
@@ -693,6 +695,55 @@ viewLoadingFailed err =
 
             _ ->
                 text "Erreur de chargement des tâches"
+        ]
+
+
+type NavigationItem
+    = TodoList
+    | Statistics
+
+
+isActive : Page -> NavigationItem -> Bool
+isActive page navItem =
+    case ( page, navItem ) of
+        ( TodoListPage _, TodoList ) ->
+            True
+
+        ( StatisticsPage, Statistics ) ->
+            True
+
+        ( _, _ ) ->
+            False
+
+
+viewNavigation : Page -> Html msg
+viewNavigation page =
+    [ { href = "/statistics", name = "classement", icon = Icons.chartBar, navItem = Statistics }
+    , { href = "/", name = "la liste", icon = Icons.listBullet, navItem = TodoList }
+    ]
+        |> List.map (viewNavItem page)
+        |> (::) (li [] [ Html.node "menage-notifications" [] [] ])
+        |> List.reverse
+        -- this is weird but I don't know how to use the pipes otherwise
+        |> ul [ attribute "role" "list" ]
+        |> List.singleton
+        |> nav []
+
+
+viewNavItem : Page -> { href : String, name : String, icon : List (VirtualDom.Attribute msg) -> Svg.Svg msg, navItem : NavigationItem } -> Html msg
+viewNavItem page { href, name, icon, navItem } =
+    li
+        (if isActive page navItem then
+            [ attribute "aria-current" "true" ]
+
+         else
+            []
+        )
+        [ a
+            [ Html.Attributes.href href ]
+            [ icon [ attribute "aria-hidden" "true" ]
+            , div [] [ text name ]
+            ]
         ]
 
 
@@ -1068,7 +1119,7 @@ viewTaskStatistics completions maybeTask =
 
         max =
             users
-                |> List.map (\user -> countCompletions user completions )
+                |> List.map (\user -> countCompletions user completions)
                 |> List.maximum
                 |> Maybe.withDefault 0
     in
