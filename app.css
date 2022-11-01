@@ -28,7 +28,9 @@ nav {
   left: 0;
   right: 0;
   background: var(--surface-1);
-  border-top: 1px solid var(--surface-4);
+  border-top: 2px solid;
+  font-weight: 700;
+  letter-spacing: var(--font-letterspacing-1);
   z-index: 1; /* not sure why this is needed */
 }
 
@@ -57,10 +59,8 @@ nav a {
   gap: var(--size-1);
 }
 
-[aria-current] svg,
 [aria-current] a,
 [aria-current] a:visited {
-  color: var(--teal-6);
   text-decoration: none;
 }
 
@@ -75,7 +75,7 @@ nav a svg {
 }
 
 nav a[href="/statistics"] svg {
-  width: 3ch;
+  width: 1.2rem;
   stroke: none;
 }
 
