@@ -9,7 +9,7 @@ import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
 import Http exposing (Error(..))
 import Icons
 import Iso8601
-import Json.Decode exposing (Decoder, andThen, at, fail, field, list, map2, map3, map5, string, succeed)
+import Json.Decode exposing (Decoder, andThen, at, fail, field, int, list, map2, map4, map6, string, succeed)
 import Json.Encode as Encode
 import ListExtra
 import Random
@@ -117,6 +117,7 @@ type alias NewTaskPageModel =
     { name : String
     , repeats : Repeats
     , times : Int
+    , points : Int
     , saving : Bool
     }
 
@@ -132,6 +133,7 @@ initNewTaskPageModel =
     { name = ""
     , repeats = EveryDay
     , times = 1
+    , points = 1
     , saving = False
     }
 
@@ -253,6 +255,7 @@ type LoginMsg
 type NewTaskMsg
     = SetRepeats Repeats
     | SetTaskName String
+    | SetPoints Int
     | Increment
     | Decrement
     | CreateNewTask
@@ -446,7 +449,7 @@ updateTodoList msg model pageModel =
                 ( Just user, DataSuccess nowWithTimeZone _ _ ) ->
                     let
                         completion =
-                            Completion "tmp-id" user todo.task.id todo.task.name now
+                            Completion "tmp-id" user todo.task.id todo.task.name todo.task.points now
 
                         newTodo =
                             { todo | status = Done user (timeAgo now nowWithTimeZone) completion }
@@ -497,6 +500,12 @@ updateNewTask msg model pageModel =
             , Cmd.none
             )
 
+        SetPoints points ->
+            ( model
+            , { pageModel | points = points }
+            , Cmd.none
+            )
+
         Increment ->
             ( model
             , { pageModel | times = pageModel.times + 1 }
@@ -514,6 +523,7 @@ updateNewTask msg model pageModel =
                 task =
                     { id = "tmp-id"
                     , name = pageModel.name
+                    , points = pageModel.points
                     , recurrence =
                         case pageModel.repeats of
                             EveryDay ->
@@ -796,6 +806,9 @@ viewNewTaskForm model =
                         |> List.map (viewRepeatRadio model.repeats)
                    )
             )
+        , fieldset
+            []
+            (legend [] [ text "Points" ] :: ([ 1, 2, 5 ] |> List.map (viewPointsRadio model.points)))
         , viewFrequencyCounter model.repeats model.times
         , button
             [ type_ "submit"
@@ -819,6 +832,21 @@ viewRepeatRadio selected ( id_, text_, repeats ) =
             ]
             []
         , label [ for id_ ] [ text text_ ]
+        ]
+
+
+viewPointsRadio : Int -> Int -> Html Msg
+viewPointsRadio selected points =
+    div [ class "radio-field" ]
+        [ input
+            [ type_ "radio"
+            , id ("points_" ++ String.fromInt points)
+            , name "points"
+            , checked (points == selected)
+            , onInput (\_ -> (NewTaskMsg << SetPoints) points)
+            ]
+            []
+        , label [ for ("points_" ++ String.fromInt points) ] [ text (String.fromInt points) ]
         ]
 
 
@@ -1106,20 +1134,21 @@ viewTaskStatistics completions maybeTask =
                 |> List.map .user
                 |> ListExtra.unique
 
-        countCompletions user_ completions_ =
+        countCompletionPoints user_ completions_ =
             completions_
                 |> List.filter (\{ user } -> user == user_)
-                |> List.length
+                |> List.map .taskPoints
+                |> List.sum
 
-        counts =
+        countPoints =
             users
-                |> List.map (\user -> ( user, countCompletions user taskCompletions ))
+                |> List.map (\user -> ( user, countCompletionPoints user taskCompletions ))
                 |> List.sortBy Tuple.second
                 |> List.reverse
 
         max =
             users
-                |> List.map (\user -> countCompletions user completions)
+                |> List.map (\user -> countCompletionPoints user completions)
                 |> List.maximum
                 |> Maybe.withDefault 0
     in
@@ -1128,7 +1157,7 @@ viewTaskStatistics completions maybeTask =
         [ h2 [] [ maybeTask |> Maybe.map .name |> Maybe.withDefault "Total" |> text ]
         , table
             []
-            (List.map (viewCount max) counts)
+            (List.map (viewCount max) countPoints)
         ]
 
 
@@ -1258,10 +1287,11 @@ tasksAndCompletionsDecoder =
 
 taskDecoder : Decoder TaskDefinition
 taskDecoder =
-    map3 TaskDefinition
+    map4 TaskDefinition
         (field "id" string)
         (at [ "fields", "name" ] string)
         (at [ "fields", "frequency" ] recurrenceDecoder)
+        (at [ "fields", "points" ] int)
 
 
 recurrenceDecoder : Decoder Recurrence
@@ -1295,17 +1325,18 @@ recurrenceDecoder =
 
 completionDecoder : Decoder Completion
 completionDecoder =
-    map5 Completion
+    map6 Completion
         (field "id" string)
         (at [ "fields", "user" ] string)
-        (at [ "fields", "task" ] singleElementArrayDecoder)
-        (at [ "fields", "task_name" ] singleElementArrayDecoder)
+        (at [ "fields", "task" ] (singleElementArrayDecoder string))
+        (at [ "fields", "task_name" ] (singleElementArrayDecoder string))
+        (at [ "fields", "task_points" ] (singleElementArrayDecoder int))
         (at [ "fields", "completed_at" ] Iso8601.decoder)
 
 
-singleElementArrayDecoder : Decoder TaskID
-singleElementArrayDecoder =
-    list string
+singleElementArrayDecoder : Decoder a -> Decoder a
+singleElementArrayDecoder decoder =
+    list decoder
         |> andThen
             (\elements ->
                 case elements of
@@ -1331,6 +1362,7 @@ taskDefinitionEncoder taskDefinition =
         [ ( "id", Encode.string taskDefinition.id )
         , ( "name", Encode.string taskDefinition.name )
         , ( "frequency", recurrenceEncoder taskDefinition.recurrence )
+        , ( "points", Encode.int taskDefinition.points )
         ]
 
 

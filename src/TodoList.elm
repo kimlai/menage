@@ -15,6 +15,7 @@ type alias TaskDefinition =
     { id : TaskID
     , name : TaskName
     , recurrence : Recurrence
+    , points : Int
     }
 
 
@@ -37,6 +38,7 @@ type alias Completion =
     , user : User
     , taskId : String
     , taskName : String
+    , taskPoints : Int
     , completedAt : Posix
     }
 
